@@ -1,3 +1,5 @@
+# Version: 1.0.1 - Updated scoring logic and fixed security
+
 import os
 import re
 import math
@@ -538,7 +540,7 @@ def root():
 # ✅ role:        str        = Form(...)    → required form text field
 # ✅ resume_text: str        = Form(None)   → optional fallback plain text
 #
-# ❌ WRONG: async def analyze(file: UploadFile, role: str)
+# WRONG: async def analyze(file: UploadFile, role: str)
 #    → FastAPI reads 'role' as a path/query param, NOT from form body
 #    → Results in: "Field required: role" error
 # ─────────────────────────────────────────────────────────────────
