@@ -4,10 +4,9 @@ import ResumeUpload from '@/components/ResumeUpload';
 import { useCareerStore } from '@/store/useCareerStore';
 import { useState } from "react";
 import { roles } from "@/lib/roles";
-// import { getMockResultByRole } from "@/lib/mockData";
 import { Sparkles, BarChart3, Shield } from 'lucide-react';
 
-const features = [
+const features = [  
   {
     icon: Sparkles,
     title: 'AI-Powered Analysis',
@@ -27,9 +26,7 @@ const features = [
 
 const Index = () => {
   const navigate = useNavigate();
-
   const [type, setType] = useState<'internship' | 'job'>('internship');
-
   const [actualFile, setActualFile] = useState<File | null>(null);
 
   const {
@@ -42,23 +39,48 @@ const Index = () => {
     setError
   } = useCareerStore();
 
+  const isLoggedIn = !!localStorage.getItem('token');
+
   const handleAnalyze = async () => {
+    if (!isLoggedIn) {
+      alert("Please login to analyze your resume");
+      navigate('/login');
+      return;
+    }
+
     if (!selectedRole) return alert("Please select a role");
     if (!actualFile) return alert("Please upload a resume");
 
     const formData = new FormData();
-    formData.append('file', actualFile);
+    // ✅ Change 1: Match the backend field name 'resume'
+    formData.append('resume', actualFile); 
     formData.append('role', selectedRole);
 
     startAnalysis();
 
     try {
-      const res = await fetch('http://localhost:5000/api/upload-resume', {
+      const token = localStorage.getItem('token');
+
+      // ✅ Change 2: Correct the URL to match backend routing
+      const res = await fetch('http://localhost:5000/api/resume/upload', {
         method: 'POST',
         body: formData,
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
       });
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+
+      if (res.status === 401 || res.status === 403) {
+        localStorage.removeItem('token');
+        alert("Session expired. Please login again.");
+        navigate('/login');
+        return;
+      }
+
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      
       setResult(data.result);
       navigate('/dashboard');
     } catch (err: any) {
@@ -72,8 +94,6 @@ const Index = () => {
       <Navbar />
 
       <main className="mx-auto max-w-3xl px-4 py-12">
-
-        {/* HERO SECTION */}
         <div className="text-center mb-10">
           <h1 className="text-3xl md:text-4xl font-bold text-foreground">
             AI Career Readiness
@@ -86,7 +106,6 @@ const Index = () => {
           </p>
         </div>
 
-        {/* FEATURE CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
           {features.map((f, i) => {
             const Icon = f.icon;
@@ -105,7 +124,6 @@ const Index = () => {
           })}
         </div>
 
-        {/* Upload */}
         <ResumeUpload
           fileName={fileName}
           onFileSelect={(file) => {
@@ -118,13 +136,12 @@ const Index = () => {
           }}
         />
 
-        {/* Toggle */}
         <div className="mt-6 flex gap-3">
           <button
             onClick={() => setType('internship')}
-            className={`px-4 py-2 rounded-lg ${type === 'internship'
+            className={`px-4 py-2 rounded-lg transition-colors ${type === 'internship'
               ? 'bg-primary text-white'
-              : 'bg-muted'
+              : 'bg-muted hover:bg-muted/80'
               }`}
           >
             Internship
@@ -132,27 +149,26 @@ const Index = () => {
 
           <button
             onClick={() => setType('job')}
-            className={`px-4 py-2 rounded-lg ${type === 'job'
+            className={`px-4 py-2 rounded-lg transition-colors ${type === 'job'
               ? 'bg-primary text-white'
-              : 'bg-muted'
+              : 'bg-muted hover:bg-muted/80'
               }`}
           >
             Job
           </button>
         </div>
 
-        {/* Horizontal Roles */}
         <div className="mt-4">
           <p className="mb-2 text-sm font-medium">Select Target Role</p>
 
-          <div className="flex gap-3 overflow-x-auto pb-2">
+          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
             {roles[type].map((role) => (
               <div
                 key={role}
                 onClick={() => setRole(role)}
-                className={`min-w-[180px] text-center px-4 py-3 rounded-xl border cursor-pointer transition ${selectedRole === role
-                  ? 'bg-primary text-white'
-                  : 'hover:bg-primary/10'
+                className={`min-w-[180px] text-center px-4 py-3 rounded-xl border cursor-pointer transition-all ${selectedRole === role
+                  ? 'bg-primary text-white border-primary shadow-md'
+                  : 'bg-card hover:border-primary/50 hover:bg-primary/5'
                   }`}
               >
                 {role}
@@ -161,14 +177,12 @@ const Index = () => {
           </div>
         </div>
 
-        {/* Analyze Button */}
         <button
           onClick={handleAnalyze}
-          className="mt-6 w-full px-6 py-3 bg-primary text-white rounded-lg"
+          className="mt-6 w-full px-6 py-3 bg-primary text-white rounded-lg font-semibold hover:bg-primary/90 transition-all shadow-lg active:scale-[0.98]"
         >
-          Analyze Resume →
+          {isLoggedIn ? "Analyze Resume →" : "Login to Analyze"}
         </button>
-
       </main>
     </div>
   );
