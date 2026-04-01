@@ -1,5 +1,3 @@
-# Version: 1.0.1 - Updated scoring logic and fixed security
-
 import os
 import re
 import math
@@ -244,6 +242,28 @@ STOP_WORDS = {
     "our","you","your","he","she","it","they","their","this","that","not",
 }
 
+# ══════════════════════════════════════════════════════════════════
+# TOP COMPANIES LIST (used across scoring)
+# ══════════════════════════════════════════════════════════════════
+TOP_COMPANIES = [
+    # FAANG+
+    "google", "microsoft", "amazon", "meta", "facebook", "apple", "netflix",
+    # Tier-1 Product Companies
+    "openai", "adobe", "uber", "airbnb", "stripe", "shopify", "atlassian",
+    "salesforce", "linkedin", "twitter", "snapchat", "pinterest",
+    # Big Tech / Cloud
+    "oracle", "sap", "ibm", "intel", "nvidia", "amd", "cisco",
+    # High-paying startups / unicorns
+    "notion", "figma", "canva", "dropbox", "slack", "discord", "zoom",
+    # Indian Top Tech Companies
+    "flipkart", "zomato", "swiggy", "paytm", "ola", "razorpay", "cred",
+    "meesho", "groww", "zerodha", "freshworks", "postman",
+    # Consulting / Big Tech Services
+    "tcs", "infosys", "wipro", "hcl", "accenture", "deloitte"
+]
+
+STARTUP_KEYWORDS = ["startup", "early stage", "seed", "series a"]
+
 
 # ══════════════════════════════════════════════════════════════════
 # ALGORITHM 1: NLP PREPROCESSING using spaCy
@@ -332,34 +352,233 @@ def calculate_tfidf_match(resume_text: str, role_data: dict) -> int:
 
 
 # ══════════════════════════════════════════════════════════════════
+# HELPER: Check if resume has a top company experience
+# ══════════════════════════════════════════════════════════════════
+def detect_top_company(text_lower: str) -> tuple[bool, str]:
+    """
+    Returns (found: bool, company_name: str).
+
+    STRICT matching — searches ONLY inside the EXPERIENCE section.
+    This prevents false positives like:
+      - "Qualified for The Big Code by Google"  → achievements section, IGNORED
+      - "Google Cloud course"                   → skills/cert section, IGNORED
+      - "I want to work at Amazon"              → not an employer, IGNORED
+
+    Only real employer entries like these are matched:
+      - "Amazon – Software Development Engineer Intern"
+      - "Web Development Intern, NullClass"
+      - "SDE Intern at Microsoft"
+    """
+
+    # ── Step 1: Extract ONLY the experience section ───────────────
+    # Grab text between "experience" heading and next major section heading
+    exp_match = re.search(
+        r"\bexperience\b\s*\n(.+?)(?=\n\s*\b(education|projects?|technical skills?|skills?|certifications?|achievements?|awards?|activities|publications?)\b)",
+        text_lower,
+        re.IGNORECASE | re.DOTALL
+    )
+
+    if exp_match:
+        exp_text = exp_match.group(1)
+        print(f"[EXP] Experience section found ({len(exp_text)} chars): {exp_text[:120]!r}")
+    else:
+        # Fallback: use first 600 chars after "experience" keyword
+        idx = text_lower.find("experience")
+        if idx == -1:
+            print("[EXP] No experience section found at all")
+            return False, ""
+        exp_text = text_lower[idx: idx + 600]
+        print(f"[EXP] Experience section fallback ({len(exp_text)} chars)")
+
+    # ── Step 2: Match company name + job title INSIDE exp_text only ─
+
+    # Pattern A: "Amazon – SDE Intern" / "Amazon | Engineer"
+    pattern_a = re.compile(
+        r"\b(" + "|".join(re.escape(c) for c in TOP_COMPANIES) + r")\b"
+        r"\s*[-–|,at ]{1,6}\s*"
+        r".{0,80}"
+        r"\b(intern|internship|engineer|developer|analyst|sde|swe|scientist|designer|consultant)\b",
+        re.IGNORECASE | re.DOTALL
+    )
+
+    # Pattern B: "SDE Intern, Amazon" / "Web Developer at Google"
+    pattern_b = re.compile(
+        r"\b(intern|internship|engineer|developer|analyst|sde|swe|scientist|designer|consultant)\b"
+        r".{0,60}"
+        r"\b(" + "|".join(re.escape(c) for c in TOP_COMPANIES) + r")\b",
+        re.IGNORECASE | re.DOTALL
+    )
+
+    m1 = pattern_a.search(exp_text)
+    if m1:
+        company_name = m1.group(1)
+        print(f"[EXP] Tier 1 confirmed in exp section (A — company→role): {company_name}")
+        return True, company_name
+
+    m2 = pattern_b.search(exp_text)
+    if m2:
+        company_name = m2.group(2)
+        print(f"[EXP] Tier 1 confirmed in exp section (B — role→company): {company_name}")
+        return True, company_name
+
+    print("[EXP] No top company found as actual employer in experience section")
+    return False, ""
+
+
+# ══════════════════════════════════════════════════════════════════
+# HELPER: Extract real experience duration (strict — avoids year ranges)
+# ══════════════════════════════════════════════════════════════════
+def extract_experience_duration_score(text_lower: str) -> int:
+    """
+    Extracts ONLY explicit duration mentions like:
+      "2 months", "6 months", "1 year", "1.5 years"
+    
+    DELIBERATELY ignores:
+      - Year ranges like "2023 – 2025" (those are dates, not durations)
+      - Standalone years like "2024"
+    
+    Returns a bonus score (0-20).
+    """
+    # Pattern: number (int or decimal) followed by month/year word
+    # Must NOT be preceded by another 4-digit year pattern (avoids "2023 - 2 months" edge case)
+    duration_pattern = re.compile(
+        r"(?<!\d{4}\s{0,5})"          # not preceded by a 4-digit year
+        r"(\d+(?:\.\d+)?)"             # number like 2 or 1.5
+        r"\s*"
+        r"(months?|years?|yrs?|mos?)"  # time unit
+        r"(?!\s*[-–]\s*\d{4})",        # not followed by "- 2025" (date range)
+        re.IGNORECASE
+    )
+
+    total_months = 0
+    for match in duration_pattern.finditer(text_lower):
+        num = float(match.group(1))
+        unit = match.group(2).lower()
+        if "year" in unit or "yr" in unit:
+            total_months += num * 12
+        else:
+            total_months += num
+
+    print(f"[EXP] Detected duration: {total_months:.1f} months")
+
+    # Convert to a bonus score (capped at 20)
+    if total_months >= 12:
+        return 20
+    elif total_months >= 6:
+        return 15
+    elif total_months >= 3:
+        return 10
+    elif total_months > 0:
+        return 5
+    return 0
+
+
+# ══════════════════════════════════════════════════════════════════
 # ALGORITHM 5: SECTION SCORES + WEIGHTED READINESS
 # ══════════════════════════════════════════════════════════════════
 def calculate_section_scores(resume_text: str, role_data: dict, extracted: list) -> dict:
     tl = resume_text.lower()
+
+    # ── 1. SKILLS SCORE ──────────────────────────────────────────
     skills_score = clamp(int(len(extracted) / max(len(role_data["required"]), 1) * 100))
+
+    # ── 2. EXPERIENCE SCORE (FIXED) ──────────────────────────────
+    #
+    # PROBLEM (old code):
+    #   - duration regex matched year ranges like "2023-2027" → false score boost
+    #   - Normal internship at unknown company could score 70-80 due to
+    #     company_score(15) + duration_score(high from false matches)
+    #   - Top company was only 90, so gap was tiny
+    #
+    # FIX (new logic):
+    #   Tier 1 – Top company (Amazon, Google, etc.)  → base 88, small duration bonus → max ~95
+    #   Tier 2 – Normal internship (any company)     → base 45, small bonuses        → max ~65
+    #   Tier 3 – No internship detected              → base 10, small bonuses        → max ~30
+    #
+    # This ensures clear, meaningful separation between tiers.
+    # ─────────────────────────────────────────────────────────────
+
+    found_top_company, company_name = detect_top_company(tl)
+    has_internship = bool(re.search(r"\bintern(ship)?\b", tl))
+    has_work_exp   = bool(re.search(r"work(ed)?\s+(at|for|with)|employed|full.?time", tl))
+    duration_bonus = extract_experience_duration_score(tl)
+
+    if found_top_company:
+        # TIER 1: Top company internship/job
+        # Base 88 ensures clear advantage; duration bonus adds up to 7 more
+        base = 88
+        experience_score = clamp(int(base + min(duration_bonus, 7)))
+        print(f"[EXP] Tier 1 — Top company ({company_name}): {experience_score}")
+
+    elif has_internship or has_work_exp:
+        # TIER 2: Regular internship or job at non-top company
+        # Base 45 → with bonuses max ~65, clearly below Tier 1
+        base = 45
+
+        # Small boost for named company presence
+        if re.search(r"company|pvt|ltd|inc|solutions|tech|labs|systems", tl):
+            base += 8
+
+        # Startup boost
+        if any(re.search(rf"\b{re.escape(kw)}\b", tl) for kw in STARTUP_KEYWORDS):
+            base += 5
+
+        # Duration bonus (max 12 for Tier 2 to keep ceiling at ~65)
+        experience_score = clamp(int(base + min(duration_bonus, 12)))
+        print(f"[EXP] Tier 2 — Regular internship: {experience_score}")
+
+    else:
+        # TIER 3: No internship / work experience detected
+        # Base 10, freelance/open source can push to ~30
+        base = 10
+
+        if bool(re.search(r"freelance|contract|consultant", tl)):
+            base += 15
+
+        if "open source" in tl or "contribution" in tl:
+            base += 8
+
+        experience_score = clamp(int(base + min(duration_bonus, 8)))
+        print(f"[EXP] Tier 3 — No experience: {experience_score}")
+
+    # ── 3. PROJECT QUALITY SCORING ───────────────────────────────
     proj_signals = [
-        bool(re.search(r"project|built|developed|implemented|created|designed", tl)),
-        bool(re.search(r"github\.com/\w|deployed|live demo|vercel|netlify|heroku|railway", tl)),
-        bool(re.search(r"https?://\S+", tl)),
+        bool(re.search(r"project|built|developed|implemented", tl)),
         any(kw in tl for kw in role_data.get("project_signals", [])),
-        bool(re.search(r"\d+\s*(users?|stars?|downloads?|requests?|%)", tl)),
     ]
-    projects_score = clamp(int(sum(proj_signals) / len(proj_signals) * 100))
-    exp_signals = [
-        bool(re.search(r"\bintern(ship)?\b", tl)),
-        bool(re.search(r"work(ed)? (at|for|with)|employed|full.?time|part.?time", tl)),
-        bool(re.search(r"freelance|contract|consultant", tl)),
-        bool(re.search(r"open.?source|contribution|pull request|merged", tl)),
-        bool(re.search(r"\d+\s*(year|month|yr)s?\s*(of\s*)?(experience|exp)", tl)),
-    ]
-    experience_score = clamp(int(sum(exp_signals) / len(exp_signals) * 100))
+
+    project_score_val = (sum(proj_signals) / len(proj_signals)) * 50
+
+    if "github.com" in tl:
+        project_score_val += 20
+    if any(x in tl for x in ["vercel", "netlify", "heroku", "railway", "render", "live demo"]):
+        project_score_val += 20
+    if re.search(r"\d+\s*(users|stars|downloads|requests|clients|%)", tl):
+        project_score_val += 20
+    if any(k in tl for k in ["scalable", "architecture", "real-time", "optimization", "ai", "ml"]):
+        project_score_val += 10
+
+    # Multiple projects boost
+    project_count = len(re.findall(r"\bproject\b", tl))
+    if project_count >= 3:
+        project_score_val += 15
+
+    projects_score = clamp(int(project_score_val))
+
+    # ── 4. EDUCATION SCORE ───────────────────────────────────────
     edu_signals = [
-        bool(re.search(r"bachelor|b\.?tech|b\.?e\b|b\.?sc", tl)),
-        bool(re.search(r"master|m\.?tech|mca|m\.?sc|m\.?e\b", tl)),
-        bool(re.search(r"university|college|institute|iit|nit|bits", tl)),
-        bool(re.search(r"cgpa|gpa|percentage|9\.\d|8\.\d|7\.\d", tl)),
+        bool(re.search(r"bachelor|b\.?tech|university|college", tl)),
+        bool(re.search(r"cgpa|gpa|percentage", tl)),
     ]
-    education_score = clamp(min(100, int(sum(edu_signals) / len(edu_signals) * 100) + 25))
+
+    education_score = (sum(edu_signals) / len(edu_signals)) * 70
+
+    # Top college boost
+    if any(x in tl for x in ["iit", "nit", "bits", "iiit"]):
+        education_score += 30
+
+    education_score = clamp(int(education_score))
+
     return {
         "skills":     skills_score,
         "projects":   projects_score,
@@ -369,11 +588,19 @@ def calculate_section_scores(resume_text: str, role_data: dict, extracted: list)
 
 
 def weighted_readiness_score(bd: dict) -> int:
+    # Extra bonus for truly exceptional experience (Tier 1 company)
+    exp_bonus = 0
+    if bd["experience"] >= 85:
+        exp_bonus = 6
+    elif bd["experience"] >= 60:
+        exp_bonus = 2
+
     return clamp(int(
         0.30 * bd["skills"] +
         0.25 * bd["projects"] +
-        0.20 * bd["experience"] +
-        0.25 * bd["education"]
+        0.35 * bd["experience"] +
+        0.10 * bd["education"] +
+        exp_bonus
     ))
 
 
@@ -530,29 +757,14 @@ def root():
     }
 
 
-# ─────────────────────────────────────────────────────────────────
-# FIX: /analyze endpoint
-#
-# RULE: When mixing UploadFile with Form fields in FastAPI, ALL
-# parameters must have explicit decorators — File(...) or Form(...)
-#
-# ✅ file:        UploadFile = File(None)   → optional file upload
-# ✅ role:        str        = Form(...)    → required form text field
-# ✅ resume_text: str        = Form(None)   → optional fallback plain text
-#
-# WRONG: async def analyze(file: UploadFile, role: str)
-#    → FastAPI reads 'role' as a path/query param, NOT from form body
-#    → Results in: "Field required: role" error
-# ─────────────────────────────────────────────────────────────────
 @app.post("/analyze")
 async def analyze(
-    role: str = Form(...),              # ← REQUIRED: must be Form(...), never plain str
-    file: UploadFile = File(None),      # ← optional file
-    resume_text: str = Form(None),      # ← optional plain text fallback
+    role: str = Form(...),
+    file: UploadFile = File(None),
+    resume_text: str = Form(None),
 ):
     text = ""
 
-    # Path 1: File uploaded (PDF or DOCX)
     if file and file.filename:
         filename = file.filename.lower()
         suffix = ".pdf" if filename.endswith(".pdf") else ".docx"
@@ -564,7 +776,6 @@ async def analyze(
         finally:
             os.unlink(tmp_path)
 
-    # Path 2: Plain text sent directly (no file)
     elif resume_text:
         text = resume_text
 
