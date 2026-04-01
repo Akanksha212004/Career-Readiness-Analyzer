@@ -551,42 +551,30 @@ def calculate_section_scores(resume_text: str, role_data: dict, extracted: list)
     
     project_score_val = 0
 
-    # 1. Must have project keyword (otherwise almost 0)
     if re.search(r"\b(project|built|developed|implemented)\b", tl):
         project_score_val += 20
     else:
-        return {
-            "skills": skills_score,
-            "projects": 5,   # no project detected
-            "experience": experience_score,
-            "education": education_score,
-        }
+        project_score_val += 5
 
-# 2. Role-specific project relevance
     if any(kw in tl for kw in role_data.get("project_signals", [])):
         project_score_val += 15
 
-    # 3. GitHub proof (important)
     if "github.com" in tl:
         project_score_val += 20
     else:
-        project_score_val -= 10   # penalize no repo
+        project_score_val -= 10
 
-    # 4. Deployment (VERY important)
     if any(x in tl for x in ["vercel", "netlify", "render", "railway", "live demo"]):
         project_score_val += 20
     else:
         project_score_val -= 5
 
-    # 5. Real impact (users, %, etc.)
     if re.search(r"\d+\s*(users|stars|downloads|requests|clients|%)", tl):
         project_score_val += 15
 
-    # 6. Advanced keywords (bonus)
     if any(k in tl for k in ["scalable", "architecture", "real-time", "optimization", "ai", "ml"]):
         project_score_val += 10
 
-    # 7. Multiple projects (strict)
     project_count = len(re.findall(r"\bproject\b", tl))
     if project_count >= 3:
         project_score_val += 10
@@ -594,7 +582,6 @@ def calculate_section_scores(resume_text: str, role_data: dict, extracted: list)
         project_score_val -= 5
 
     projects_score = clamp(int(project_score_val))
-
 
     # ── 4. EDUCATION SCORE ───────────────────────────────────────
     edu_signals = [
