@@ -442,7 +442,7 @@ def extract_experience_duration_score(text_lower: str) -> int:
     # Pattern: number (int or decimal) followed by month/year word
     # Must NOT be preceded by another 4-digit year pattern (avoids "2023 - 2 months" edge case)
     duration_pattern = re.compile(
-        r"(?<!\d{4}\s{0,5})"          # not preceded by a 4-digit year
+        r"(?<!\d{4}\s)"          # not preceded by a 4-digit year
         r"(\d+(?:\.\d+)?)"             # number like 2 or 1.5
         r"\s*"
         r"(months?|years?|yrs?|mos?)"  # time unit
@@ -542,28 +542,59 @@ def calculate_section_scores(resume_text: str, role_data: dict, extracted: list)
         print(f"[EXP] Tier 3 — No experience: {experience_score}")
 
     # ── 3. PROJECT QUALITY SCORING ───────────────────────────────
-    proj_signals = [
-        bool(re.search(r"project|built|developed|implemented", tl)),
-        any(kw in tl for kw in role_data.get("project_signals", [])),
-    ]
+    # proj_signals = [
+    #     bool(re.search(r"project|built|developed|implemented", tl)),
+    #     any(kw in tl for kw in role_data.get("project_signals", [])),
+    # ]
 
-    project_score_val = (sum(proj_signals) / len(proj_signals)) * 50
+    # project_score_val = (sum(proj_signals) / len(proj_signals)) * 50
+    
+    project_score_val = 0
 
+    # 1. Must have project keyword (otherwise almost 0)
+    if re.search(r"\b(project|built|developed|implemented)\b", tl):
+        project_score_val += 20
+    else:
+        return {
+            "skills": skills_score,
+            "projects": 5,   # no project detected
+            "experience": experience_score,
+            "education": education_score,
+        }
+
+# 2. Role-specific project relevance
+    if any(kw in tl for kw in role_data.get("project_signals", [])):
+        project_score_val += 15
+
+    # 3. GitHub proof (important)
     if "github.com" in tl:
         project_score_val += 20
-    if any(x in tl for x in ["vercel", "netlify", "heroku", "railway", "render", "live demo"]):
+    else:
+        project_score_val -= 10   # penalize no repo
+
+    # 4. Deployment (VERY important)
+    if any(x in tl for x in ["vercel", "netlify", "render", "railway", "live demo"]):
         project_score_val += 20
+    else:
+        project_score_val -= 5
+
+    # 5. Real impact (users, %, etc.)
     if re.search(r"\d+\s*(users|stars|downloads|requests|clients|%)", tl):
-        project_score_val += 20
+        project_score_val += 15
+
+    # 6. Advanced keywords (bonus)
     if any(k in tl for k in ["scalable", "architecture", "real-time", "optimization", "ai", "ml"]):
         project_score_val += 10
 
-    # Multiple projects boost
+    # 7. Multiple projects (strict)
     project_count = len(re.findall(r"\bproject\b", tl))
     if project_count >= 3:
-        project_score_val += 15
+        project_score_val += 10
+    elif project_count == 1:
+        project_score_val -= 5
 
     projects_score = clamp(int(project_score_val))
+
 
     # ── 4. EDUCATION SCORE ───────────────────────────────────────
     edu_signals = [
