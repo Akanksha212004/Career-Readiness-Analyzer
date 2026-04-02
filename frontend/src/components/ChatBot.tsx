@@ -18,7 +18,6 @@ const QUICK_REPLIES = [
   "How is my score calculated?",
 ];
 
-// ── Robot SVG Icon ─────────────────────────────────────────────
 const RobotIcon = ({ size = 24, className = '' }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
     <rect x="5" y="8" width="14" height="10" rx="2" fill="currentColor" opacity="0.15" stroke="currentColor" strokeWidth="1.5"/>
@@ -34,7 +33,7 @@ const RobotIcon = ({ size = 24, className = '' }: { size?: number; className?: s
 
 const ChatBot = () => {
   const { selectedRole } = useCareerStore();
-  const [isOpen, setIsOpen]     = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 0,
@@ -42,7 +41,7 @@ const ChatBot = () => {
       content: `Hi! 👋 I'm your AI Career Counselor. Ask me about skills, projects, courses, or interview tips for **${selectedRole || 'your target role'}**.`,
     },
   ]);
-  const [input, setInput]     = useState('');
+  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [showQuick, setShowQuick] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -61,27 +60,34 @@ const ChatBot = () => {
     setLoading(true);
 
     try {
-      const res = await fetch('http://localhost:5000/api/chat', {
+      // Points directly to Python ML Service on Port 8000
+      const res = await fetch('http://localhost:8000/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text,
-          role: selectedRole || '',
-          history: messages.slice(-6).map((m) => ({ role: m.role, content: m.content })),
+          role: selectedRole || 'frontend', // Fallback role
+          history: messages.slice(-6).map((m) => ({ 
+            role: m.role === 'assistant' ? 'assistant' : 'user', 
+            content: m.content 
+          })),
         }),
       });
 
+      if (!res.ok) throw new Error("Server responded with an error");
+
       const data = await res.json();
-      const reply = data.reply || "Sorry, I couldn't process that. Try again!";
+      const reply = data.reply || "I'm sorry, I couldn't process that right now.";
 
       setMessages((prev) => [
         ...prev,
         { id: Date.now() + 1, role: 'assistant', content: reply },
       ]);
-    } catch {
+    } catch (error) {
+      console.error("Chatbot Error:", error);
       setMessages((prev) => [
         ...prev,
-        { id: Date.now() + 1, role: 'assistant', content: "Connection error. Make sure the backend is running on port 5000!" },
+        { id: Date.now() + 1, role: 'assistant', content: "Connection error. Please ensure the Python ML service is running on port 8000." },
       ]);
     } finally {
       setLoading(false);
@@ -113,7 +119,6 @@ const ChatBot = () => {
 
   return (
     <>
-      {/* ── Floating Robot Bubble ─────────────────────────────── */}
       <motion.button
         onClick={() => setIsOpen((v) => !v)}
         whileHover={{ scale: 1.1 }}
@@ -123,152 +128,74 @@ const ChatBot = () => {
       >
         <AnimatePresence mode="wait">
           {isOpen ? (
-            <motion.div key="close"
-              initial={{ rotate: -90, opacity: 0 }}
-              animate={{ rotate: 0, opacity: 1 }}
-              exit={{ rotate: 90, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-            >
+            <motion.div key="close" initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }}>
               <X className="h-6 w-6 text-white" />
             </motion.div>
           ) : (
-            <motion.div key="robot"
-              initial={{ rotate: 90, opacity: 0 }}
-              animate={{ rotate: 0, opacity: 1 }}
-              exit={{ rotate: -90, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-            >
+            <motion.div key="robot" initial={{ rotate: 90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: -90, opacity: 0 }}>
               <RobotIcon size={28} className="text-white" />
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Pulse ring */}
-        {!isOpen && (
-          <span className="absolute inset-0 rounded-full animate-ping"
-            style={{ background: 'rgba(34,197,94,0.35)' }} />
-        )}
+        {!isOpen && <span className="absolute inset-0 rounded-full animate-ping" style={{ background: 'rgba(34,197,94,0.35)' }} />}
       </motion.button>
 
-      {/* ── Chat Window ──────────────────────────────────────── */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
             className="fixed bottom-24 right-6 z-50 flex flex-col rounded-2xl bg-card shadow-2xl ring-1 ring-border overflow-hidden"
             style={{ width: '360px', height: '520px' }}
           >
-            {/* Header */}
-            <div className="flex items-center gap-3 border-b border-border px-4 py-3"
-              style={{ background: 'linear-gradient(135deg, #22c55e15, #16a34a10)' }}>
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl"
-                style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
+            <div className="flex items-center gap-3 border-b border-border px-4 py-3" style={{ background: 'linear-gradient(135deg, #22c55e15, #16a34a10)' }}>
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
                 <RobotIcon size={20} className="text-white" />
               </div>
               <div>
                 <p className="text-sm font-semibold text-foreground">AI Career Counselor</p>
-                <p className="text-xs text-muted-foreground">
-                  {selectedRole ? `Helping with: ${selectedRole}` : 'Powered by NLP + ML'}
-                </p>
-              </div>
-              <div className="ml-auto flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-xs text-muted-foreground">Online</span>
+                <p className="text-xs text-muted-foreground">{selectedRole ? `Helping with: ${selectedRole}` : 'Online'}</p>
               </div>
             </div>
 
-            {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {messages.map((msg) => (
-                <motion.div
-                  key={msg.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`flex gap-2 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
-                >
-                  {/* Avatar */}
-                  <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-                    msg.role === 'assistant' ? '' : 'bg-muted'
-                  }`}
-                    style={msg.role === 'assistant' ? { background: 'linear-gradient(135deg, #22c55e, #16a34a)' } : {}}>
-                    {msg.role === 'assistant'
-                      ? <RobotIcon size={16} className="text-white" />
-                      : <span className="text-xs text-muted-foreground font-medium">U</span>
-                    }
+                <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`flex gap-2 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                  <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${msg.role === 'assistant' ? '' : 'bg-muted'}`} style={msg.role === 'assistant' ? { background: 'linear-gradient(135deg, #22c55e, #16a34a)' } : {}}>
+                    {msg.role === 'assistant' ? <RobotIcon size={16} className="text-white" /> : <span className="text-xs font-medium">U</span>}
                   </div>
-
-                  {/* Bubble */}
-                  <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
-                    msg.role === 'user'
-                      ? 'text-white rounded-tr-sm'
-                      : 'bg-muted text-foreground rounded-tl-sm'
-                  }`}
-                    style={msg.role === 'user' ? { background: 'linear-gradient(135deg, #22c55e, #16a34a)' } : {}}>
+                  <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${msg.role === 'user' ? 'text-white rounded-tr-sm' : 'bg-muted text-foreground rounded-tl-sm'}`} style={msg.role === 'user' ? { background: 'linear-gradient(135deg, #22c55e, #16a34a)' } : {}}>
                     {msg.role === 'assistant' ? formatMessage(msg.content) : msg.content}
                   </div>
                 </motion.div>
               ))}
-
-              {/* Typing indicator */}
-              {loading && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full"
-                    style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
-                    <RobotIcon size={16} className="text-white" />
-                  </div>
-                  <div className="flex items-center gap-1 rounded-2xl rounded-tl-sm bg-muted px-4 py-3">
-                    {[0, 1, 2].map((i) => (
-                      <motion.div key={i}
-                        className="h-1.5 w-1.5 rounded-full bg-muted-foreground"
-                        animate={{ y: [0, -4, 0] }}
-                        transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
-                      />
-                    ))}
-                  </div>
-                </motion.div>
-              )}
+              {loading && <div className="text-xs text-muted-foreground animate-pulse">AI is thinking...</div>}
               <div ref={bottomRef} />
             </div>
 
-            {/* Quick Replies */}
-            {showQuick && !loading && (
-              <div className="px-4 pb-2">
-                <p className="mb-2 text-xs text-muted-foreground">Quick questions:</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {QUICK_REPLIES.slice(0, 4).map((q) => (
-                    <button key={q} onClick={() => sendMessage(q)}
-                      className="rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground hover:border-green-400 hover:bg-green-50 dark:hover:bg-green-950/20 transition-colors">
-                      {q}
-                    </button>
-                  ))}
-                </div>
+            {showQuick && (
+              <div className="px-4 pb-2 flex flex-wrap gap-1.5">
+                {QUICK_REPLIES.slice(0, 4).map((q) => (
+                  <button key={q} onClick={() => sendMessage(q)} className="rounded-full border border-border px-3 py-1 text-xs hover:bg-green-50 transition-colors">
+                    {q}
+                  </button>
+                ))}
               </div>
             )}
 
-            {/* Input */}
-            <div className="border-t border-border p-3">
-              <div className="flex items-center gap-2 rounded-xl bg-muted px-3 py-2">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Ask me anything..."
-                  className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
-                  disabled={loading}
-                />
-                <button
-                  onClick={() => sendMessage(input)}
-                  disabled={!input.trim() || loading}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white disabled:opacity-40 transition-opacity"
-                  style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}
-                >
-                  <Send className="h-3.5 w-3.5" />
-                </button>
-              </div>
+            <div className="border-t border-border p-3 flex gap-2">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask me anything..."
+                className="flex-1 bg-muted rounded-xl px-3 py-2 text-sm outline-none"
+              />
+              <button onClick={() => sendMessage(input)} disabled={!input.trim() || loading} className="h-9 w-9 flex items-center justify-center rounded-xl text-white" style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
+                <Send size={16} />
+              </button>
             </div>
           </motion.div>
         )}
