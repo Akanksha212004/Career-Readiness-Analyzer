@@ -18,6 +18,20 @@ async function analyzeResume(resumeText, role) {
     }
   );
 
+//   const response = await axios.post(
+//     `${ML_API_URL}/analyze`,
+//     {
+//       text: resumeText,
+//       role: role,
+//     },
+//     {
+//       timeout: ML_TIMEOUT_MS,
+//       headers: {
+//         "Content-Type": "application/json",
+//       },
+//     }
+//   );
+
   return normalizeMlResponse(response.data);
 }
 
