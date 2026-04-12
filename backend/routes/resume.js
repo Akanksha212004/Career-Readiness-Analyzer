@@ -6,10 +6,35 @@ const upload = require('../config/multer');
 const { extractTextFromFile, cleanupFile } = require('../services/fileParser');
 const { analyzeResume } = require('../services/mlService');
 const { getMockResultByRole } = require('../services/mockData');
+const Role = require('../models/Role');
+
+/**
+ * Helper function: Naye role ko seekhna (Self-Learning Logic)
+ */
+const learnNewRole = async (roleName, roleType) => {
+  if (!roleName || roleName.length < 3) return; // Bahut chote words skip karein
+
+  try {
+    // Check karein kya ye role pehle se exist karta hai?
+    const exists = await Role.findOne({
+      title: { $regex: new RegExp(`^${roleName.trim()}$`, 'i') },
+      category: roleType
+    });
+
+    if (!exists) {
+      await Role.create({
+        title: roleName.trim(),
+        category: roleType || 'job'
+      });
+      console.log(`New role learned: ${roleName} (${roleType}) ✅`);
+    }
+  } catch (err) {
+    console.error("Error learning new role:", err.message);
+  }
+};
 
 /**
  * POST /api/resume/upload
- * (The '/api/resume' part comes from server.js)
  */
 router.post('/upload', upload.single('resume'), async (req, res, next) => {
   const filePath = req.file?.path;
@@ -23,10 +48,17 @@ router.post('/upload', upload.single('resume'), async (req, res, next) => {
     }
 
     const role = (req.body.role || '').trim();
+    const type = req.body.type || 'job'; // Frontend se category (internship/job)
+
     if (!role) {
       if (filePath) cleanupFile(filePath);
       return res.status(400).json({ error: 'Target role is required.' });
     }
+
+    // --- SELF-LEARNING LOGIC START ---
+    // Background mein role save karega taaki analysis slow na ho
+    learnNewRole(role, type);
+    // --- SELF-LEARNING LOGIC END ---
 
     const useMock = req.body.useMock === 'true';
 
@@ -79,22 +111,27 @@ router.post('/upload', upload.single('resume'), async (req, res, next) => {
 });
 
 /**
- * GET /api/resume/roles
+ * GET /api/resume/roles/search
  */
-router.get('/roles', (req, res) => {
-  const roles = {
-    internship: [
-      'Frontend Intern', 'Backend Intern', 'Full Stack Intern',
-      'ML Intern', 'Data Science Intern', 'DevOps Intern',
-      'Android Intern', 'iOS Intern',
-    ],
-    job: [
-      'Frontend Engineer', 'Backend Engineer', 'Full Stack Engineer',
-      'ML Engineer', 'Data Scientist', 'DevOps Engineer',
-      'Android Developer', 'iOS Developer',
-    ],
-  };
-  res.json(roles);
+router.get('/roles/search', async (req, res) => {
+  try {
+    const { q, type } = req.query; 
+
+    // Agar search query khali hai toh empty array bhejien
+    if (!q || q.trim().length < 2) {
+      return res.json([]);
+    }
+
+    // Database mein search logic
+    const results = await Role.find({
+      category: type, 
+      title: { $regex: q, $options: 'i' } 
+    }).limit(10);
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: "Roles dhundne mein problem hui" });
+  }
 });
 
 module.exports = router;

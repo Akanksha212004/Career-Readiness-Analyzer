@@ -2,9 +2,10 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import ResumeUpload from '@/components/ResumeUpload';
 import { useCareerStore } from '@/store/useCareerStore';
-import { useState } from "react";
-import { roles } from "@/lib/roles";
+import { useState, useEffect } from "react";
 import { Sparkles, BarChart3, Shield } from 'lucide-react';
+// @ts-ignore
+import API from '@/utils/api';
 
 const features = [  
   {
@@ -29,6 +30,10 @@ const Index = () => {
   const [type, setType] = useState<'internship' | 'job'>('internship');
   const [actualFile, setActualFile] = useState<File | null>(null);
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
   const {
     selectedRole,
     fileName,
@@ -41,27 +46,41 @@ const Index = () => {
 
   const isLoggedIn = !!localStorage.getItem('token');
 
-  const handleAnalyze = async () => {
-    if (!isLoggedIn) {
-      alert("Please login to analyze your resume");
-      navigate('/login');
-      return;
-    }
+  useEffect(() => {
+    const fetchRoles = async () => {
+      if (searchQuery.trim().length > 1) {
+        try {
+          const res = await API.get(`/resume/roles/search?q=${searchQuery}&type=${type}`);
+          setSuggestions(res.data);
+          setShowSuggestions(true);
+        } catch (err) {
+          console.error("Error fetching roles:", err);
+        }
+      } else {
+        setSuggestions([]);
+      }
+    };
 
-    if (!selectedRole) return alert("Please select a role");
-    if (!actualFile) return alert("Please upload a resume");
+    const timer = setTimeout(fetchRoles, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, type]);
+
+  const handleAnalyze = async () => {
+
+    const finalRole = selectedRole || searchQuery;
+
+    if (!finalRole) return alert("Please select a role");
+  if (!actualFile) return alert("Please upload a resume");
 
     const formData = new FormData();
-    // ✅ Change 1: Match the backend field name 'resume'
     formData.append('resume', actualFile); 
-    formData.append('role', selectedRole);
+    formData.append('role', finalRole);
+    formData.append('type', type);
 
     startAnalysis();
 
     try {
       const token = localStorage.getItem('token');
-
-      // ✅ Change 2: Correct the URL to match backend routing
       const res = await fetch('http://localhost:5000/api/resume/upload', {
         method: 'POST',
         body: formData,
@@ -138,7 +157,11 @@ const Index = () => {
 
         <div className="mt-6 flex gap-3">
           <button
-            onClick={() => setType('internship')}
+            onClick={() => {
+                setType('internship');
+                setSearchQuery(""); 
+                setRole(""); 
+            }}
             className={`px-4 py-2 rounded-lg transition-colors ${type === 'internship'
               ? 'bg-primary text-white'
               : 'bg-muted hover:bg-muted/80'
@@ -148,7 +171,11 @@ const Index = () => {
           </button>
 
           <button
-            onClick={() => setType('job')}
+            onClick={() => {
+                setType('job');
+                setSearchQuery("");
+                setRole("");
+            }}
             className={`px-4 py-2 rounded-lg transition-colors ${type === 'job'
               ? 'bg-primary text-white'
               : 'bg-muted hover:bg-muted/80'
@@ -158,23 +185,49 @@ const Index = () => {
           </button>
         </div>
 
-        <div className="mt-4">
-          <p className="mb-2 text-sm font-medium">Select Target Role</p>
+        <div className="mt-4 relative">
+          <p className="mb-2 text-sm font-medium">Search & Select Target Role</p>
+          
+          <input
+            type="text"
+            placeholder={`Type to search ${type} roles...`}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => searchQuery && setShowSuggestions(true)}
+            // Blur delay taaki onMouseDown pehle chal sake
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+            className="w-full p-3 rounded-xl border bg-card focus:ring-2 focus:ring-primary outline-none transition-all"
+          />
 
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-            {roles[type].map((role) => (
-              <div
-                key={role}
-                onClick={() => setRole(role)}
-                className={`min-w-[180px] text-center px-4 py-3 rounded-xl border cursor-pointer transition-all ${selectedRole === role
-                  ? 'bg-primary text-white border-primary shadow-md'
-                  : 'bg-card hover:border-primary/50 hover:bg-primary/5'
-                  }`}
-              >
-                {role}
-              </div>
-            ))}
-          </div>
+          {/* Suggestions List */}
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="absolute z-50 w-full mt-2 bg-card border rounded-xl shadow-2xl max-h-60 overflow-y-auto">
+              {suggestions.map((role) => (
+                <div
+                  key={role._id}
+                  // onClick ki jagah onMouseDown use kiya taaki blur event se pehle trigger ho
+                  onMouseDown={(e) => {
+                    e.preventDefault(); // Input ka blur event rokhne ke liye
+                    setRole(role.title);
+                    setSearchQuery(role.title);
+                    setShowSuggestions(false);
+                  }}
+                  className="px-4 py-3 hover:bg-primary/10 cursor-pointer border-b last:border-none"
+                >
+                  {role.title}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {selectedRole && (
+            <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground">Active Selection:</span>
+                <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-md font-bold">
+                    {selectedRole}
+                </span>
+            </div>
+          )}
         </div>
 
         <button
