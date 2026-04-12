@@ -867,11 +867,13 @@ def analyze_pipeline(resume_text: str, role: str) -> dict:
     print(f"[ML] Breakdown: {bd} | Overall: {overall}")
     explanations = generate_explanations(bd, extracted, missing, ats, semantic_score)
     confidence = clamp(
-        60 +
-        min(20, len(resume_text.split()) // 40) +
-        (5 if overall > 75 else 0) +
-        (5 if ats > 70 else 0)
+        50 +
+        min(15, len(resume_text.split()) // 40) +  # word count bonus
+        (10 if overall > 75 else 5 if overall > 50 else 0) +  # overall score based
+        (8 if ats > 70 else 4 if ats > 50 else 0) +           # ats based
+        (7 if skill_match > 60 else 3 if skill_match > 30 else 0)  # skill match based
     )
+
     return {
         "overall_score":      overall,
         "ats_score":          ats,

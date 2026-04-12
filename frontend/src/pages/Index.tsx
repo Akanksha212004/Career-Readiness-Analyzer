@@ -6,7 +6,7 @@ import { useState } from "react";
 import { roles } from "@/lib/roles";
 import { Sparkles, BarChart3, Shield } from 'lucide-react';
 
-const features = [  
+const features = [
   {
     icon: Sparkles,
     title: 'AI-Powered Analysis',
@@ -27,13 +27,14 @@ const features = [
 const Index = () => {
   const navigate = useNavigate();
   const [type, setType] = useState<'internship' | 'job'>('internship');
-  const [actualFile, setActualFile] = useState<File | null>(null);
 
   const {
     selectedRole,
     fileName,
+    actualFile,        // ← from store
     setRole,
     setFileName,
+    setActualFile,     // ← from store
     setResult,
     startAnalysis,
     setError
@@ -49,11 +50,10 @@ const Index = () => {
     }
 
     if (!selectedRole) return alert("Please select a role");
-    if (!actualFile) return alert("Please upload a resume");
+    if (!actualFile) return alert("Please upload a resume");  // ✅ now works correctly
 
     const formData = new FormData();
-    // ✅ Change 1: Match the backend field name 'resume'
-    formData.append('resume', actualFile); 
+    formData.append('resume', actualFile);   // ✅ no .current needed
     formData.append('role', selectedRole);
 
     startAnalysis();
@@ -61,7 +61,6 @@ const Index = () => {
     try {
       const token = localStorage.getItem('token');
 
-      // ✅ Change 2: Correct the URL to match backend routing
       const res = await fetch('http://localhost:5000/api/resume/upload', {
         method: 'POST',
         body: formData,
@@ -80,7 +79,7 @@ const Index = () => {
       }
 
       if (!res.ok) throw new Error(data.error || "Upload failed");
-      
+
       setResult(data.result);
       navigate('/dashboard');
     } catch (err: any) {
@@ -127,11 +126,11 @@ const Index = () => {
         <ResumeUpload
           fileName={fileName}
           onFileSelect={(file) => {
-            setActualFile(file);
+            setActualFile(file);    // ✅ store mein save
             setFileName(file.name);
           }}
           onFileRemove={() => {
-            setActualFile(null);
+            setActualFile(null);    // ✅ store se clear
             setFileName(null);
           }}
         />

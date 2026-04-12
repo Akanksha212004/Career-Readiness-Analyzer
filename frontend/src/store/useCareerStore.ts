@@ -51,11 +51,13 @@ export interface AnalysisResult {
 interface CareerStore {
   selectedRole: string;
   fileName: string | null;
+  actualFile: File | null;
   isAnalyzing: boolean;
   result: AnalysisResult | null;
   error: string | null;
   setRole: (role: string) => void;
   setFileName: (name: string | null) => void;
+  setActualFile: (file: File | null) => void;
   startAnalysis: () => void;
   setResult: (result: AnalysisResult) => void;
   setError: (error: string | null) => void;
@@ -65,13 +67,15 @@ interface CareerStore {
 export const useCareerStore = create<CareerStore>((set) => ({
   selectedRole: '',
   fileName: null,
+  actualFile: null,
   isAnalyzing: false,
   result: null,
   error: null,
   setRole: (role) => set({ selectedRole: role }),
   setFileName: (name) => set({ fileName: name }),
+  setActualFile: (file) => set({ actualFile: file }),
   startAnalysis: () => set({ isAnalyzing: true, error: null }),
   setResult: (result) => set({ result, isAnalyzing: false }),
   setError: (error) => set({ error, isAnalyzing: false }),
-  reset: () => set({ selectedRole: '', fileName: null, isAnalyzing: false, result: null, error: null }),
+  reset: () => set({ selectedRole: '', fileName: null, actualFile: null, isAnalyzing: false, result: null, error: null }),
 }));
