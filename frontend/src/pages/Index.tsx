@@ -7,7 +7,7 @@ import { Sparkles, BarChart3, Shield } from 'lucide-react';
 // @ts-ignore
 import API from '@/utils/api';
 
-const features = [  
+const features = [
   {
     icon: Sparkles,
     title: 'AI-Powered Analysis',
@@ -28,8 +28,6 @@ const features = [
 const Index = () => {
   const navigate = useNavigate();
   const [type, setType] = useState<'internship' | 'job'>('internship');
-  const [actualFile, setActualFile] = useState<File | null>(null);
-
   const [searchQuery, setSearchQuery] = useState("");
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -37,8 +35,10 @@ const Index = () => {
   const {
     selectedRole,
     fileName,
+    actualFile,
     setRole,
     setFileName,
+    setActualFile,
     setResult,
     startAnalysis,
     setError
@@ -66,11 +66,12 @@ const Index = () => {
   }, [searchQuery, type]);
 
   const handleAnalyze = async () => {
-
+    // Merge Logic: Dono ke inputs ko handle karne ke liye
     const finalRole = selectedRole || searchQuery;
 
-    if (!finalRole) return alert("Please select a role");
-  if (!actualFile) return alert("Please upload a resume");
+    // Validation checks
+    if (!finalRole.trim()) return alert("Please select or type a role");
+    if (!actualFile) return alert("Please upload a resume");
 
     const formData = new FormData();
     formData.append('resume', actualFile); 
@@ -99,7 +100,7 @@ const Index = () => {
       }
 
       if (!res.ok) throw new Error(data.error || "Upload failed");
-      
+
       setResult(data.result);
       navigate('/dashboard');
     } catch (err: any) {
@@ -111,14 +112,12 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-
       <main className="mx-auto max-w-3xl px-4 py-12">
         <div className="text-center mb-10">
           <h1 className="text-3xl md:text-4xl font-bold text-foreground">
             AI Career Readiness
             <span className="text-primary"> Analyzer</span>
           </h1>
-
           <p className="mt-3 text-muted-foreground max-w-xl mx-auto text-sm md:text-base">
             Upload your resume, get instant AI analysis with readiness scores,
             skill gap detection, and personalized recommendations.
@@ -129,10 +128,7 @@ const Index = () => {
           {features.map((f, i) => {
             const Icon = f.icon;
             return (
-              <div
-                key={i}
-                className="rounded-xl border bg-card p-4 text-center card-shadow"
-              >
+              <div key={i} className="rounded-xl border bg-card p-4 text-center card-shadow">
                 <div className="flex justify-center mb-2">
                   <Icon className="h-5 w-5 text-primary" />
                 </div>
@@ -149,6 +145,7 @@ const Index = () => {
             setActualFile(file);
             setFileName(file.name);
           }}
+          onFileSelectError={(err) => setError(err)}
           onFileRemove={() => {
             setActualFile(null);
             setFileName(null);
@@ -162,24 +159,17 @@ const Index = () => {
                 setSearchQuery(""); 
                 setRole(""); 
             }}
-            className={`px-4 py-2 rounded-lg transition-colors ${type === 'internship'
-              ? 'bg-primary text-white'
-              : 'bg-muted hover:bg-muted/80'
-              }`}
+            className={`px-4 py-2 rounded-lg transition-colors ${type === 'internship' ? 'bg-primary text-white' : 'bg-muted hover:bg-muted/80'}`}
           >
             Internship
           </button>
-
           <button
             onClick={() => {
                 setType('job');
                 setSearchQuery("");
                 setRole("");
             }}
-            className={`px-4 py-2 rounded-lg transition-colors ${type === 'job'
-              ? 'bg-primary text-white'
-              : 'bg-muted hover:bg-muted/80'
-              }`}
+            className={`px-4 py-2 rounded-lg transition-colors ${type === 'job' ? 'bg-primary text-white' : 'bg-muted hover:bg-muted/80'}`}
           >
             Job
           </button>
@@ -187,27 +177,23 @@ const Index = () => {
 
         <div className="mt-4 relative">
           <p className="mb-2 text-sm font-medium">Search & Select Target Role</p>
-          
           <input
             type="text"
             placeholder={`Type to search ${type} roles...`}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => searchQuery && setShowSuggestions(true)}
-            // Blur delay taaki onMouseDown pehle chal sake
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
             className="w-full p-3 rounded-xl border bg-card focus:ring-2 focus:ring-primary outline-none transition-all"
           />
 
-          {/* Suggestions List */}
           {showSuggestions && suggestions.length > 0 && (
             <div className="absolute z-50 w-full mt-2 bg-card border rounded-xl shadow-2xl max-h-60 overflow-y-auto">
               {suggestions.map((role) => (
                 <div
                   key={role._id}
-                  // onClick ki jagah onMouseDown use kiya taaki blur event se pehle trigger ho
                   onMouseDown={(e) => {
-                    e.preventDefault(); // Input ka blur event rokhne ke liye
+                    e.preventDefault();
                     setRole(role.title);
                     setSearchQuery(role.title);
                     setShowSuggestions(false);

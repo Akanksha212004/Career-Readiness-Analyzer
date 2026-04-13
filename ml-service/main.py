@@ -7,8 +7,10 @@ from docx import Document
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import uvicorn
+import json
+from datetime import datetime
 from dotenv import load_dotenv
 from groq import Groq
 
@@ -20,830 +22,963 @@ from sklearn.metrics.pairwise import cosine_similarity as sk_cosine
 import numpy as np
 
 load_dotenv()
-
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-print("Sentence Transformer loaded")
 
 # ══════════════════════════════════════════════════════════════════
-# MODEL LOADING (runs once at startup)
+# MODEL LOADING
 # ══════════════════════════════════════════════════════════════════
-print("Loading spaCy model...")
+print("Loading models...")
 nlp_model = spacy.load("en_core_web_md")
-print("spaCy loaded")
-
-print("Loading Sentence Transformer model...")
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
-print("Sentence Transformer loaded")
+print("All models loaded successfully!")
 
-app = FastAPI(title="Career Readiness ML Service — Intelligent Edition")
+app = FastAPI(title="Career Readiness ML Service — Deep Search Edition")
 
-# ── CORS ──────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "http://localhost:5173", "http://localhost:5000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ── Pydantic Models ───────────────────────────────────────────────
-class ChatMessage(BaseModel):
-    role: str
-    content: str
-
-class ChatRequest(BaseModel):
-    message: str
-    role: str = ""
-    history: List[ChatMessage] = []
-
-class ChatResponse(BaseModel):
-    reply: str
-
 
 # ══════════════════════════════════════════════════════════════════
 # ROLE KNOWLEDGE BASE
 # ══════════════════════════════════════════════════════════════════
 ROLE_DB = {
     "frontend": {
-        "required": [
-            "html", "css", "javascript", "typescript", "react", "next.js", "nextjs",
-            "redux", "git", "github", "jest", "testing", "figma", "tailwind", "tailwindcss",
-            "webpack", "vite", "responsive design", "bootstrap", "sass", "ci/cd",
-            "react hooks", "component design", "web performance", "accessibility"
-        ],
-        "jd_text": """Frontend developer skilled in HTML CSS JavaScript TypeScript React Next.js
-            Redux state management Git version control Jest unit testing Figma design tools
-            Tailwind CSS responsive design webpack vite build tools CI/CD pipelines
-            web accessibility performance optimization component architecture""",
+        "required": ["html", "css", "javascript", "typescript", "react", "next.js", "redux", "tailwind", "figma"],
+        "bonus":    ["framer motion", "webpack", "vite", "storybook", "cypress", "seo", "web vitals", "a11y"],
+        "jd_text":  "Frontend developer skilled in React, Next.js, and modern UI/UX tools.",
         "courses": [
-            {"title": "React - The Complete Guide", "platform": "Udemy", "link": "https://udemy.com/course/react-the-complete-guide-incl-redux/", "duration": "40 hours"},
-            {"title": "TypeScript for Professionals", "platform": "Frontend Masters", "link": "https://frontendmasters.com/courses/typescript-v4/", "duration": "12 hours"},
-            {"title": "JavaScript Algorithms & DS", "platform": "freeCodeCamp", "link": "https://freecodecamp.org/learn/javascript-algorithms-and-data-structures/", "duration": "300 hours"},
-            {"title": "CSS for JavaScript Developers", "platform": "Josh Comeau", "link": "https://css-for-js.dev", "duration": "20 hours"},
+            {"title": "React - The Complete Guide",      "platform": "Udemy",    "link": "#", "duration": "40h"},
+            {"title": "Next.js 14 & React",              "platform": "Udemy",    "link": "#", "duration": "25h"},
+            {"title": "TypeScript Bootcamp",             "platform": "Coursera", "link": "#", "duration": "20h"},
         ],
         "jobs": [
-            {"role": "Frontend Intern", "company": "Google", "location": "Remote", "apply_link": "https://careers.google.com"},
-            {"role": "React Developer Intern", "company": "Meta", "location": "Menlo Park, CA", "apply_link": "https://metacareers.com"},
-            {"role": "UI Engineer Intern", "company": "Stripe", "location": "San Francisco, CA", "apply_link": "https://stripe.com/jobs"},
+            {"role": "Frontend Intern",    "company": "Google",  "location": "Remote",  "apply_link": "#"},
+            {"role": "React Developer",    "company": "Meta",    "location": "Hybrid",  "apply_link": "#"},
+            {"role": "UI Engineer Intern", "company": "Atlassian","location": "Remote", "apply_link": "#"},
         ],
-        "suggestions": [
-            "Learn TypeScript — it is required in 85% of frontend roles today",
-            "Build and deploy 2-3 projects on Vercel or Netlify with live links on your resume",
-            "Add unit testing with Jest and React Testing Library to your skillset",
-            "Contribute to open source React projects on GitHub to gain real experience",
-        ],
-        "projects": [
-            "E-commerce dashboard with React + TypeScript + Redux",
-            "Weather app with real API integration and responsive design",
-            "Portfolio website with animations using Framer Motion",
-        ],
-        "project_signals": ["portfolio", "dashboard", "ecommerce", "landing page", "ui", "web app", "frontend", "react app"],
+        "suggestions":       ["Master TypeScript generics and advanced types",
+                               "Deep dive into Web Core Vitals & SEO optimisation",
+                               "Learn Framer Motion for production-grade animations",
+                               "Write unit & integration tests with Jest + React Testing Library"],
+        "projects":          ["Portfolio with Framer Motion animations",
+                               "E-commerce dashboard with real-time updates",
+                               "Component library published on npm"],
+        "project_signals":   ["react", "ui", "frontend", "next", "css"],
     },
     "backend": {
-        "required": [
-            "python", "node.js", "nodejs", "sql", "mysql", "postgresql", "mongodb",
-            "docker", "aws", "redis", "rest api", "graphql", "git", "github",
-            "jwt", "authentication", "express", "fastapi", "django", "flask",
-            "system design", "linux", "microservices", "message queue", "kafka"
-        ],
-        "jd_text": """Backend developer skilled in Python Node.js SQL PostgreSQL MongoDB Docker
-            AWS cloud Redis caching REST API design GraphQL Git authentication JWT
-            Express FastAPI Django Flask system design Linux microservices
-            message queues Kafka scalability performance""",
+        "required": ["python", "node.js", "sql", "mongodb", "docker", "aws", "fastapi", "django", "express"],
+        "bonus":    ["redis", "kafka", "grpc", "microservices", "kubernetes", "ci/cd", "terraform", "rabbitmq"],
+        "jd_text":  "Backend engineer specialising in scalable APIs and database management.",
         "courses": [
-            {"title": "Node.js - The Complete Guide", "platform": "Udemy", "link": "https://udemy.com/course/nodejs-the-complete-guide/", "duration": "35 hours"},
-            {"title": "Docker & Kubernetes Masterclass", "platform": "Udemy", "link": "https://udemy.com/course/docker-kubernetes-the-complete-guide/", "duration": "25 hours"},
-            {"title": "System Design Interview", "platform": "Educative", "link": "https://educative.io/courses/grokking-the-system-design-interview", "duration": "15 hours"},
-            {"title": "PostgreSQL Bootcamp", "platform": "Udemy", "link": "https://udemy.com/course/sql-and-postgresql/", "duration": "22 hours"},
+            {"title": "Node.js Masterclass",             "platform": "Udemy",    "link": "#", "duration": "35h"},
+            {"title": "System Design for Interviews",    "platform": "Educative","link": "#", "duration": "30h"},
+            {"title": "Docker & Kubernetes Bootcamp",    "platform": "Udemy",    "link": "#", "duration": "22h"},
         ],
         "jobs": [
-            {"role": "Backend Intern", "company": "Amazon", "location": "Seattle, WA", "apply_link": "https://amazon.jobs"},
-            {"role": "API Developer Intern", "company": "Twilio", "location": "Remote", "apply_link": "https://twilio.com/careers"},
-            {"role": "Software Engineer Intern", "company": "Cloudflare", "location": "Austin, TX", "apply_link": "https://cloudflare.com/careers"},
+            {"role": "Backend Intern",     "company": "Amazon",   "location": "Seattle", "apply_link": "#"},
+            {"role": "Node.js Developer",  "company": "Flipkart", "location": "Bangalore","apply_link": "#"},
         ],
-        "suggestions": [
-            "Learn Docker and containerize at least one of your existing projects",
-            "Build REST APIs with proper JWT authentication and error handling",
-            "Study system design fundamentals — asked in nearly every backend interview",
-            "Deploy a production API on AWS or Railway with a CI/CD pipeline",
-        ],
-        "projects": [
-            "REST API with JWT auth, rate limiting, and role-based access control",
-            "URL shortener with Redis caching and click analytics",
-            "Microservices demo with Docker Compose and API gateway",
-        ],
-        "project_signals": ["api", "server", "backend", "database", "microservice", "rest", "endpoint"],
+        "suggestions":       ["Learn System Design (HLD + LLD)",
+                               "Dockerise all your projects and push to Docker Hub",
+                               "Build a production-ready REST API with rate-limiting & auth",
+                               "Explore Redis caching & message queues"],
+        "projects":          ["REST API with JWT + role-based access control",
+                               "Microservices e-commerce backend with Docker",
+                               "Real-time notification system with WebSockets"],
+        "project_signals":   ["api", "database", "backend", "server", "express"],
     },
     "fullstack": {
-        "required": [
-            "html", "css", "javascript", "typescript", "react", "node.js", "nodejs",
-            "sql", "mongodb", "git", "rest api", "docker", "aws", "redux", "next.js",
-            "postgresql", "authentication", "deployment", "ci/cd"
-        ],
-        "jd_text": """Full stack developer HTML CSS JavaScript TypeScript React Node.js
-            SQL MongoDB PostgreSQL Git REST API Docker AWS Redux Next.js
-            authentication deployment CI/CD full stack web development""",
+        "required": ["html", "css", "javascript", "react", "node.js", "mongodb", "next.js",
+                     "postgresql", "express", "rest api"],
+        "bonus":    ["typescript", "docker", "aws", "redis", "graphql", "testing", "ci/cd"],
+        "jd_text":  "Full stack developer capable of handling both client-side and server-side logic.",
         "courses": [
-            {"title": "MERN Stack - The Complete Guide", "platform": "Udemy", "link": "https://udemy.com/course/mern-stack-course-mongodb-express-react-and-nodejs/", "duration": "45 hours"},
-            {"title": "Next.js & React Complete Guide", "platform": "Udemy", "link": "https://udemy.com/course/nextjs-react-the-complete-guide/", "duration": "25 hours"},
-            {"title": "MongoDB - The Complete Guide", "platform": "Udemy", "link": "https://udemy.com/course/mongodb-the-complete-developers-guide/", "duration": "18 hours"},
-            {"title": "AWS for Beginners", "platform": "Coursera", "link": "https://coursera.org/learn/aws-cloud-practitioner-essentials", "duration": "15 hours"},
+            {"title": "MERN Stack Bootcamp",             "platform": "Udemy",    "link": "#", "duration": "50h"},
+            {"title": "Full Stack Open (Helsinki)",      "platform": "Free",     "link": "https://fullstackopen.com", "duration": "self-paced"},
+            {"title": "System Design Primer",            "platform": "GitHub",   "link": "#", "duration": "self-paced"},
         ],
         "jobs": [
-            {"role": "Full Stack Intern", "company": "Atlassian", "location": "Remote", "apply_link": "https://atlassian.com/company/careers"},
-            {"role": "Web Developer Intern", "company": "Shopify", "location": "Remote", "apply_link": "https://shopify.com/careers"},
-            {"role": "Software Engineer Intern", "company": "GitHub", "location": "Remote", "apply_link": "https://github.com/about/careers"},
+            {"role": "Full Stack Intern",     "company": "Atlassian", "location": "Remote",    "apply_link": "#"},
+            {"role": "Full Stack Developer",  "company": "Shopify",   "location": "Remote",    "apply_link": "#"},
+            {"role": "SDE Intern",            "company": "Swiggy",    "location": "Bangalore", "apply_link": "#"},
         ],
-        "suggestions": [
-            "Build a complete MERN or Next.js full-stack app with authentication and deployment",
-            "Learn both SQL and NoSQL databases — versatility is key for full stack roles",
-            "Add a CI/CD pipeline using GitHub Actions to at least one project",
-            "Deploy your full-stack app on cloud — try Vercel for frontend + Railway for backend",
-        ],
-        "projects": [
-            "Social media app with MERN stack, real-time chat using Socket.io",
-            "E-commerce platform with Stripe payment integration and admin panel",
-            "Blog CMS with Next.js, PostgreSQL, and markdown support",
-        ],
-        "project_signals": ["fullstack", "full stack", "web app", "mern", "mean", "nextjs", "full-stack"],
+        "suggestions":       ["Build and deploy an end-to-end application on Vercel + Render",
+                               "Learn CI/CD with GitHub Actions",
+                               "Add TypeScript to your existing JS projects",
+                               "Study Low-Level Design patterns"],
+        "projects":          ["Social Media App with MERN (real-time chat + feed)",
+                               "Full-stack e-commerce platform with Stripe payments",
+                               "Real-time collaborative tool (like Notion/Figma lite)"],
+        "project_signals":   ["fullstack", "mern", "nextjs", "vercel", "render"],
     },
-    "ml": {
-        "required": [
-            "python", "tensorflow", "pytorch", "numpy", "pandas", "scikit-learn",
-            "matplotlib", "seaborn", "nlp", "deep learning", "cnn", "rnn", "lstm",
-            "opencv", "keras", "mlops", "aws", "docker", "jupyter", "kaggle",
-            "bert", "transformers", "hugging face", "data preprocessing", "feature engineering"
-        ],
-        "jd_text": """Machine learning engineer Python TensorFlow PyTorch NumPy Pandas
-            Scikit-learn deep learning CNN RNN LSTM NLP OpenCV Keras MLOps
-            AWS Docker Jupyter Kaggle BERT Transformers HuggingFace
-            data preprocessing feature engineering model deployment""",
+    "data": {
+        "required": ["python", "pandas", "numpy", "sql", "machine learning", "scikit-learn",
+                     "matplotlib", "tableau", "statistics"],
+        "bonus":    ["tensorflow", "pytorch", "spark", "airflow", "dbt", "bigquery", "kafka"],
+        "jd_text":  "Data scientist / analyst with strong ML and analytical skills.",
         "courses": [
-            {"title": "Deep Learning Specialization", "platform": "Coursera", "link": "https://coursera.org/specializations/deep-learning", "duration": "60 hours"},
-            {"title": "Fast.ai Practical Deep Learning", "platform": "fast.ai", "link": "https://fast.ai", "duration": "30 hours"},
-            {"title": "MLOps Fundamentals", "platform": "Google Cloud", "link": "https://cloud.google.com/training/machinelearning-ai", "duration": "20 hours"},
-            {"title": "Kaggle ML Courses", "platform": "Kaggle", "link": "https://kaggle.com/learn", "duration": "15 hours"},
+            {"title": "Machine Learning by Andrew Ng",  "platform": "Coursera", "link": "#", "duration": "60h"},
+            {"title": "Python for Data Science",        "platform": "DataCamp", "link": "#", "duration": "30h"},
         ],
         "jobs": [
-            {"role": "ML Engineer Intern", "company": "OpenAI", "location": "San Francisco, CA", "apply_link": "https://openai.com/careers"},
-            {"role": "Data Science Intern", "company": "Netflix", "location": "Remote", "apply_link": "https://jobs.netflix.com"},
-            {"role": "AI Research Intern", "company": "Microsoft", "location": "Redmond, WA", "apply_link": "https://careers.microsoft.com"},
+            {"role": "Data Analyst Intern",    "company": "Walmart Labs", "location": "Remote",    "apply_link": "#"},
+            {"role": "ML Engineer Intern",     "company": "NVIDIA",       "location": "Hybrid",    "apply_link": "#"},
         ],
-        "suggestions": [
-            "Complete a PyTorch or TensorFlow course and build 2 end-to-end ML projects",
-            "Participate in Kaggle competitions and add your ranking/medals to your resume",
-            "Deploy a trained ML model using FastAPI + Docker — shows production readiness",
-            "Write technical blogs about your ML experiments to showcase expertise",
-        ],
-        "projects": [
-            "Image classification using CNN achieving 90%+ accuracy on benchmark dataset",
-            "Sentiment analysis NLP pipeline using BERT on real-world Twitter data",
-            "End-to-end ML pipeline with feature engineering, training, and FastAPI deployment",
-        ],
-        "project_signals": ["model", "prediction", "classification", "nlp", "neural", "machine learning", "dataset", "training", "accuracy"],
+        "suggestions":       ["Complete a Kaggle competition end-to-end",
+                               "Learn SQL window functions and query optimisation",
+                               "Build an ML pipeline with MLflow"],
+        "projects":          ["End-to-end ML pipeline on Kaggle dataset",
+                               "Sentiment analysis web app", "Sales prediction dashboard"],
+        "project_signals":   ["data", "ml", "model", "analysis", "kaggle"],
     },
     "devops": {
-        "required": [
-            "docker", "kubernetes", "aws", "linux", "git", "ci/cd", "cicd",
-            "jenkins", "ansible", "terraform", "bash", "python", "monitoring",
-            "prometheus", "grafana", "nginx", "github actions", "helm", "argocd"
-        ],
-        "jd_text": """DevOps engineer Docker Kubernetes AWS Linux Git CI/CD Jenkins
-            Ansible Terraform Bash scripting Python monitoring Prometheus Grafana
-            Nginx GitHub Actions Helm ArgoCD infrastructure automation cloud deployment""",
+        "required": ["docker", "kubernetes", "aws", "ci/cd", "linux", "terraform",
+                     "ansible", "jenkins", "github actions"],
+        "bonus":    ["helm", "prometheus", "grafana", "elk stack", "vault", "istio"],
+        "jd_text":  "DevOps engineer skilled in cloud infrastructure and automation.",
         "courses": [
-            {"title": "Docker & Kubernetes Complete Guide", "platform": "Udemy", "link": "https://udemy.com/course/docker-and-kubernetes-the-complete-guide/", "duration": "22 hours"},
-            {"title": "AWS Certified DevOps Engineer", "platform": "Coursera", "link": "https://coursera.org/professional-certificates/aws-devops", "duration": "40 hours"},
-            {"title": "Terraform for Beginners to Advanced", "platform": "Udemy", "link": "https://udemy.com/course/terraform-beginner-to-advanced/", "duration": "15 hours"},
-            {"title": "Linux Command Line Bootcamp", "platform": "Udemy", "link": "https://udemy.com/course/the-linux-command-line-bootcamp/", "duration": "14 hours"},
+            {"title": "AWS Certified Solutions Architect", "platform": "A Cloud Guru", "link": "#", "duration": "40h"},
+            {"title": "Docker & Kubernetes Complete Guide", "platform": "Udemy",       "link": "#", "duration": "22h"},
         ],
         "jobs": [
-            {"role": "DevOps Intern", "company": "HashiCorp", "location": "Remote", "apply_link": "https://hashicorp.com/jobs"},
-            {"role": "Cloud Engineer Intern", "company": "AWS", "location": "Seattle, WA", "apply_link": "https://amazon.jobs"},
-            {"role": "SRE Intern", "company": "Cloudflare", "location": "Remote", "apply_link": "https://cloudflare.com/careers"},
+            {"role": "DevOps Intern",     "company": "Infosys",  "location": "Pune",   "apply_link": "#"},
+            {"role": "Cloud Intern",      "company": "TCS",      "location": "Remote", "apply_link": "#"},
         ],
-        "suggestions": [
-            "Master Docker and Kubernetes — they are the foundation of modern DevOps",
-            "Build a complete CI/CD pipeline using GitHub Actions for any of your projects",
-            "Get AWS Cloud Practitioner certification — it is free to study and boosts resume",
-            "Practice Linux administration and write bash scripts for automation",
-        ],
-        "projects": [
-            "Full CI/CD pipeline with GitHub Actions, Docker, and automated testing",
-            "Kubernetes cluster deployment on AWS EKS with auto-scaling",
-            "Infrastructure as Code using Terraform to provision AWS resources",
-        ],
-        "project_signals": ["deployment", "pipeline", "infrastructure", "cloud", "devops", "automation", "ci/cd"],
+        "suggestions":       ["Get AWS Cloud Practitioner certified",
+                               "Set up a full CI/CD pipeline with GitHub Actions",
+                               "Deploy a Kubernetes cluster locally with Minikube"],
+        "projects":          ["CI/CD pipeline for a MERN app",
+                               "Dockerised microservices with Kubernetes orchestration",
+                               "Infrastructure-as-Code with Terraform on AWS"],
+        "project_signals":   ["docker", "aws", "kubernetes", "cloud", "devops"],
     },
 }
 
-# ── Stopwords ─────────────────────────────────────────────────────
-STOP_WORDS = {
-    "a","an","the","and","or","but","in","on","at","to","for","of","with",
-    "by","from","is","are","was","were","be","been","have","has","had",
-    "do","does","did","will","would","could","should","i","my","me","we",
-    "our","you","your","he","she","it","they","their","this","that","not",
+# ══════════════════════════════════════════════════════════════════
+# SKILL SYNONYM MAP — maps resume keywords → canonical skill names
+# ══════════════════════════════════════════════════════════════════
+SKILL_SYNONYMS = {
+    "reactjs": "react", "react.js": "react",
+    "nextjs": "next.js", "next js": "next.js",
+    "nodejs": "node.js", "node js": "node.js",
+    "expressjs": "express", "express.js": "express",
+    "mongo": "mongodb", "mongo db": "mongodb",
+    "postgres": "postgresql", "pg": "postgresql",
+    "js": "javascript", "ts": "typescript",
+    "scss": "css", "sass": "css", "tailwindcss": "tailwind",
+    "aws lambda": "aws", "ec2": "aws", "s3": "aws",
+    "scikit learn": "scikit-learn", "sklearn": "scikit-learn",
+    "ml": "machine learning", "ai": "machine learning",
+    "ds": "data structures", "dsa": "data structures",
+    "rest": "rest api", "restful": "rest api",
+    "jwt": "authentication", "oauth": "authentication",
+    "redux toolkit": "redux",
+}
+
+# ── Company Tier System ───────────────────────────────────────────
+# TIER S  : Global FAANG / top product companies — highest prestige
+TIERS_BRANDS = [
+    "google", "microsoft", "meta", "apple", "amazon", "netflix",
+    "uber", "stripe", "spotify", "openai", "deepmind",
+    # NOTE: "airbnb" intentionally excluded — used as project clone name in many resumes
+]
+# TIER 1A : Strong Indian unicorns + top global product companies
+TIER1A_BRANDS = [
+    "flipkart", "razorpay", "meesho", "cred", "zepto", "groww",
+    "phonepe", "paytm", "zomato", "swiggy", "ola", "nykaa",
+    "atlassian", "adobe", "salesforce", "linkedin", "twitter",
+    "oracle", "nvidia", "qualcomm", "intuit", "workday",
+]
+# TIER 1B : Reputed startups / product companies — decent signal
+TIER1B_BRANDS = [
+    "scaler", "interviewbit", "byjus", "unacademy", "vedantu",
+    "freshworks", "zoho", "browserstack", "postman", "hasura",
+    "chargebee", "setu", "slice", "smallcase", "cleartax",
+]
+# TIER 2  : Service / consulting companies — lower signal
+TIER2_BRANDS = [
+    "infosys", "tcs", "wipro", "hcl", "cognizant", "accenture",
+    "capgemini", "mphasis", "tech mahindra", "mindtree", "ltimindtree",
+    "hexaware", "mphasis", "persistent", "cyient",
+]
+# TIER 3  : Bootcamps / low-signal internship providers
+TIER3_BRANDS = [
+    "nullclass", "internshala", "codeclause", "coincent", "teckzite",
+    "besant", "simplilearn", "edureka",
+]
+
+# Flat list for backward-compat checks (union of S + 1A + 1B)
+TIER1_BRANDS = TIERS_BRANDS + TIER1A_BRANDS + TIER1B_BRANDS
+
+# Score awarded per tier when company is found in resume
+TIER_SCORE_MAP = {
+    "S":  45,   # FAANG — massive signal
+    "1A": 35,   # Indian unicorn / top global product
+    "1B": 25,   # Reputed startup / EdTech product
+    "2":  15,   # IT services
+    "3":   8,   # Bootcamp / low-signal
+    "unknown": 5,
+}
+
+# How much experience_score weight grows when strong company is present
+# Used in overall score formula (dynamic weight)
+TIER_EXP_WEIGHT_BOOST = {
+    "S":  0.10,   # adds +10% to experience weight in overall
+    "1A": 0.07,
+    "1B": 0.04,
+    "2":  0.02,
+    "3":  0.00,
+    "unknown": 0.00,
 }
 
 # ══════════════════════════════════════════════════════════════════
-# TOP COMPANIES LIST (used across scoring)
+# DEEP SEARCH SUGGESTIONS
 # ══════════════════════════════════════════════════════════════════
-TOP_COMPANIES = [
-    # FAANG+
-    "google", "microsoft", "amazon", "meta", "facebook", "apple", "netflix",
-    # Tier-1 Product Companies
-    "openai", "adobe", "uber", "airbnb", "stripe", "shopify", "atlassian",
-    "salesforce", "linkedin", "twitter", "snapchat", "pinterest",
-    # Big Tech / Cloud
-    "oracle", "sap", "ibm", "intel", "nvidia", "amd", "cisco",
-    # High-paying startups / unicorns
-    "notion", "figma", "canva", "dropbox", "slack", "discord", "zoom",
-    # Indian Top Tech Companies
-    "flipkart", "zomato", "swiggy", "paytm", "ola", "razorpay", "cred",
-    "meesho", "groww", "zerodha", "freshworks", "postman",
-    # Consulting / Big Tech Services
-    "tcs", "infosys", "wipro", "hcl", "accenture", "deloitte"
-]
-
-STARTUP_KEYWORDS = ["startup", "early stage", "seed", "series a"]
-
-
-# ══════════════════════════════════════════════════════════════════
-# ALGORITHM 1: NLP PREPROCESSING using spaCy
-# ══════════════════════════════════════════════════════════════════
-def nlp_preprocess_spacy(text: str) -> tuple:
-    doc = nlp_model(text[:50000])
-    tokens, lemmas = [], []
-    for token in doc:
-        if not token.is_stop and not token.is_punct and len(token.text) > 1:
-            tokens.append(token.text.lower())
-            lemmas.append(token.lemma_.lower())
-    return tokens, lemmas, doc
+@app.get("/roles/suggest")
+def suggest_roles(q: str = ""):
+    query = q.lower().strip()
+    if not query:
+        return []
+    results = set()
+    for key, data in ROLE_DB.items():
+        if query in key.lower():
+            results.add(key.title())
+        for job in data.get("jobs", []):
+            job_title = job.get("role", "")
+            if query in job_title.lower():
+                results.add(job_title)
+        for project in data.get("projects", []):
+            if query in project.lower():
+                results.add(project)
+    return sorted(list(results), key=len)[:10]
 
 
 # ══════════════════════════════════════════════════════════════════
-# ALGORITHM 2: ATS SCORE
+# HELPER UTILITIES
 # ══════════════════════════════════════════════════════════════════
-def calculate_ats_score(resume_text: str, role_data: dict) -> int:
-    tl = resume_text.lower()
-    sections = {
-        "education":  bool(re.search(r"education|degree|university|college|b\.?tech|bachelor|master|cgpa|gpa", tl)),
-        "experience": bool(re.search(r"experience|internship|worked|employed|company|organization", tl)),
-        "skills":     bool(re.search(r"skill|technical skill|proficient|expertise|competenc", tl)),
-        "projects":   bool(re.search(r"project|built|developed|implemented|created|designed", tl)),
-        "contact":    bool(re.search(r"email|phone|linkedin|github|@|contact", tl)),
-        "summary":    bool(re.search(r"summary|objective|about me|profile", tl)),
-    }
-    section_score = sum(sections.values()) / len(sections) * 35
-    _, lemmas, _ = nlp_preprocess_spacy(resume_text)
-    lemma_text = " ".join(lemmas)
-    found = sum(1 for skill in role_data["required"]
-                if skill.lower() in tl or skill.lower().replace(".", "") in tl or skill.lower() in lemma_text)
-    keyword_score = min(65, (found / max(len(role_data["required"]), 1)) * 65)
-    return clamp(int(section_score + keyword_score))
+
+def clamp(n: float, lo=0, hi=100) -> int:
+    return int(min(hi, max(lo, round(n))))
 
 
-# ══════════════════════════════════════════════════════════════════
-# ALGORITHM 3: SKILL EXTRACTION
-# ══════════════════════════════════════════════════════════════════
-def extract_skills_spacy(resume_text: str, required: list) -> tuple:
-    tl = resume_text.lower()
-    _, lemmas, _ = nlp_preprocess_spacy(resume_text)
-    lemma_text = " ".join(lemmas)
-    extracted, missing = [], []
-    for skill in required:
-        skill_l = skill.lower()
-        skill_clean = skill_l.replace(".", "").replace(" ", "")
-        text_clean  = tl.replace(".", "").replace(" ", "")
-        found = (
-            skill_l in tl or
-            skill_l in lemma_text or
-            skill_clean in text_clean or
-            skill_l.replace(".js", "js") in tl or
-            skill_l.replace("-", "") in tl.replace("-", "")
-        )
-        display = skill.upper() if len(skill) <= 4 else skill.title()
-        if found:
-            extracted.append(display)
-        else:
-            missing.append(display)
-    return extracted[:10], missing[:8]
-
-
-# ══════════════════════════════════════════════════════════════════
-# ALGORITHM 4a: SEMANTIC SIMILARITY (Sentence Transformers)
-# ══════════════════════════════════════════════════════════════════
-def calculate_semantic_skill_match(resume_text: str, role_data: dict) -> int:
-    resume_embedding = embedder.encode(resume_text[:3000], convert_to_tensor=True)
-    jd_embedding     = embedder.encode(role_data["jd_text"], convert_to_tensor=True)
-    sim = float(util.cos_sim(resume_embedding, jd_embedding)[0][0])
-    return clamp(int((sim - 0.1) / 0.6 * 100))
-
-
-# ══════════════════════════════════════════════════════════════════
-# ALGORITHM 4b: TF-IDF COSINE
-# ══════════════════════════════════════════════════════════════════
-def calculate_tfidf_match(resume_text: str, role_data: dict) -> int:
-    try:
-        vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
-        corpus = [resume_text[:5000], role_data["jd_text"]]
-        tfidf_matrix = vectorizer.fit_transform(corpus)
-        sim = float(sk_cosine(tfidf_matrix[0], tfidf_matrix[1])[0][0])
-        return clamp(int(sim * 100))
-    except Exception:
-        return 50
-
-
-# ══════════════════════════════════════════════════════════════════
-# HELPER: Check if resume has a top company experience
-# ══════════════════════════════════════════════════════════════════
-def detect_top_company(text_lower: str) -> tuple[bool, str]:
+def detect_company_tier(text_lower: str) -> tuple[str, list[str]]:
     """
-    Returns (found: bool, company_name: str).
+    Scans ONLY the experience/work section of the resume (not projects)
+    to avoid false positives like "Airbnb Clone" being treated as
+    actual Airbnb work experience.
 
-    STRICT matching — searches ONLY inside the EXPERIENCE section.
-    This prevents false positives like:
-      - "Qualified for The Big Code by Google"  → achievements section, IGNORED
-      - "Google Cloud course"                   → skills/cert section, IGNORED
-      - "I want to work at Amazon"              → not an employer, IGNORED
-
-    Only real employer entries like these are matched:
-      - "Amazon – Software Development Engineer Intern"
-      - "Web Development Intern, NullClass"
-      - "SDE Intern at Microsoft"
+    Returns: (best_tier: str, matched_companies: list[str])
+    Tier order: S > 1A > 1B > 2 > 3 > unknown
     """
+    # ── Extract only the experience section ──────────────────────
+    # Split on common section headers and take only the experience chunk
+    exp_section = text_lower
 
-    # ── Step 1: Extract ONLY the experience section ───────────────
-    # Grab text between "experience" heading and next major section heading
-    exp_match = re.search(
-        r"\bexperience\b\s*\n(.+?)(?=\n\s*\b(education|projects?|technical skills?|skills?|certifications?|achievements?|awards?|activities|publications?)\b)",
-        text_lower,
-        re.IGNORECASE | re.DOTALL
-    )
-
-    if exp_match:
-        exp_text = exp_match.group(1)
-        print(f"[EXP] Experience section found ({len(exp_text)} chars): {exp_text[:120]!r}")
-    else:
-        # Fallback: use first 600 chars after "experience" keyword
-        idx = text_lower.find("experience")
-        if idx == -1:
-            print("[EXP] No experience section found at all")
-            return False, ""
-        exp_text = text_lower[idx: idx + 600]
-        print(f"[EXP] Experience section fallback ({len(exp_text)} chars)")
-
-    # ── Step 2: Match company name + job title INSIDE exp_text only ─
-
-    # Pattern A: "Amazon – SDE Intern" / "Amazon | Engineer"
-    pattern_a = re.compile(
-        r"\b(" + "|".join(re.escape(c) for c in TOP_COMPANIES) + r")\b"
-        r"\s*[-–|,at ]{1,6}\s*"
-        r".{0,80}"
-        r"\b(intern|internship|engineer|developer|analyst|sde|swe|scientist|designer|consultant)\b",
-        re.IGNORECASE | re.DOTALL
-    )
-
-    # Pattern B: "SDE Intern, Amazon" / "Web Developer at Google"
-    pattern_b = re.compile(
-        r"\b(intern|internship|engineer|developer|analyst|sde|swe|scientist|designer|consultant)\b"
-        r".{0,60}"
-        r"\b(" + "|".join(re.escape(c) for c in TOP_COMPANIES) + r")\b",
-        re.IGNORECASE | re.DOTALL
-    )
-
-    m1 = pattern_a.search(exp_text)
-    if m1:
-        company_name = m1.group(1)
-        print(f"[EXP] Tier 1 confirmed in exp section (A — company→role): {company_name}")
-        return True, company_name
-
-    m2 = pattern_b.search(exp_text)
-    if m2:
-        company_name = m2.group(2)
-        print(f"[EXP] Tier 1 confirmed in exp section (B — role→company): {company_name}")
-        return True, company_name
-
-    print("[EXP] No top company found as actual employer in experience section")
-    return False, ""
-
-
-# ══════════════════════════════════════════════════════════════════
-# HELPER: Extract real experience duration (strict — avoids year ranges)
-# ══════════════════════════════════════════════════════════════════
-def extract_experience_duration_score(text_lower: str) -> int:
-    """
-    Extracts ONLY explicit duration mentions like:
-      "2 months", "6 months", "1 year", "1.5 years"
-    
-    DELIBERATELY ignores:
-      - Year ranges like "2023 – 2025" (those are dates, not durations)
-      - Standalone years like "2024"
-    
-    Returns a bonus score (0-20).
-    """
-    # Pattern: number (int or decimal) followed by month/year word
-    # Must NOT be preceded by another 4-digit year pattern (avoids "2023 - 2 months" edge case)
-    duration_pattern = re.compile(
-        r"(?<!\d{4}\s)"          # not preceded by a 4-digit year
-        r"(\d+(?:\.\d+)?)"             # number like 2 or 1.5
-        r"\s*"
-        r"(months?|years?|yrs?|mos?)"  # time unit
-        r"(?!\s*[-–]\s*\d{4})",        # not followed by "- 2025" (date range)
-        re.IGNORECASE
-    )
-
-    total_months = 0
-    for match in duration_pattern.finditer(text_lower):
-        num = float(match.group(1))
-        unit = match.group(2).lower()
-        if "year" in unit or "yr" in unit:
-            total_months += num * 12
-        else:
-            total_months += num
-
-    print(f"[EXP] Detected duration: {total_months:.1f} months")
-
-    # Convert to a bonus score (capped at 20)
-    if total_months >= 12:
-        return 20
-    elif total_months >= 6:
-        return 15
-    elif total_months >= 3:
-        return 10
-    elif total_months > 0:
-        return 5
-    return 0
-
-
-# ══════════════════════════════════════════════════════════════════
-# ALGORITHM 5: SECTION SCORES + WEIGHTED READINESS
-# ══════════════════════════════════════════════════════════════════
-def calculate_section_scores(resume_text: str, role_data: dict, extracted: list) -> dict:
-    tl = resume_text.lower()
-
-    # ── 1. SKILLS SCORE ──────────────────────────────────────────
-    skills_score = clamp(int(len(extracted) / max(len(role_data["required"]), 1) * 100))
-
-    # ── 2. EXPERIENCE SCORE (FIXED) ──────────────────────────────
-    #
-    # PROBLEM (old code):
-    #   - duration regex matched year ranges like "2023-2027" → false score boost
-    #   - Normal internship at unknown company could score 70-80 due to
-    #     company_score(15) + duration_score(high from false matches)
-    #   - Top company was only 90, so gap was tiny
-    #
-    # FIX (new logic):
-    #   Tier 1 – Top company (Amazon, Google, etc.)  → base 88, small duration bonus → max ~95
-    #   Tier 2 – Normal internship (any company)     → base 45, small bonuses        → max ~65
-    #   Tier 3 – No internship detected              → base 10, small bonuses        → max ~30
-    #
-    # This ensures clear, meaningful separation between tiers.
-    # ─────────────────────────────────────────────────────────────
-
-    found_top_company, company_name = detect_top_company(tl)
-    has_internship = bool(re.search(r"\bintern(ship)?\b", tl))
-    has_work_exp   = bool(re.search(r"work(ed)?\s+(at|for|with)|employed|full.?time", tl))
-    duration_bonus = extract_experience_duration_score(tl)
-
-    if found_top_company:
-        # TIER 1: Top company internship/job
-        # Base 88 ensures clear advantage; duration bonus adds up to 7 more
-        base = 88
-        experience_score = clamp(int(base + min(duration_bonus, 7)))
-        print(f"[EXP] Tier 1 — Top company ({company_name}): {experience_score}")
-
-    elif has_internship or has_work_exp:
-        # TIER 2: Regular internship or job at non-top company
-        # Base 45 → with bonuses max ~65, clearly below Tier 1
-        base = 45
-
-        # Small boost for named company presence
-        if re.search(r"company|pvt|ltd|inc|solutions|tech|labs|systems", tl):
-            base += 8
-
-        # Startup boost
-        if any(re.search(rf"\b{re.escape(kw)}\b", tl) for kw in STARTUP_KEYWORDS):
-            base += 5
-
-        # Duration bonus (max 12 for Tier 2 to keep ceiling at ~65)
-        experience_score = clamp(int(base + min(duration_bonus, 12)))
-        print(f"[EXP] Tier 2 — Regular internship: {experience_score}")
-
-    else:
-        # TIER 3: No internship / work experience detected
-        # Base 10, freelance/open source can push to ~30
-        base = 10
-
-        if bool(re.search(r"freelance|contract|consultant", tl)):
-            base += 15
-
-        if "open source" in tl or "contribution" in tl:
-            base += 8
-
-        experience_score = clamp(int(base + min(duration_bonus, 8)))
-        print(f"[EXP] Tier 3 — No experience: {experience_score}")
-
-    # ── 3. PROJECT QUALITY SCORING ───────────────────────────────
-    # proj_signals = [
-    #     bool(re.search(r"project|built|developed|implemented", tl)),
-    #     any(kw in tl for kw in role_data.get("project_signals", [])),
-    # ]
-
-    # project_score_val = (sum(proj_signals) / len(proj_signals)) * 50
-    
-    project_score_val = 0
-
-    if re.search(r"\b(project|built|developed|implemented)\b", tl):
-        project_score_val += 20
-    else:
-        project_score_val += 5
-
-    if any(kw in tl for kw in role_data.get("project_signals", [])):
-        project_score_val += 15
-
-    if "github.com" in tl:
-        project_score_val += 20
-    else:
-        project_score_val -= 10
-
-    if any(x in tl for x in ["vercel", "netlify", "render", "railway", "live demo"]):
-        project_score_val += 20
-    else:
-        project_score_val -= 5
-
-    if re.search(r"\d+\s*(users|stars|downloads|requests|clients|%)", tl):
-        project_score_val += 15
-
-    if any(k in tl for k in ["scalable", "architecture", "real-time", "optimization", "ai", "ml"]):
-        project_score_val += 10
-
-    project_count = len(re.findall(r"\bproject\b", tl))
-    if project_count >= 3:
-        project_score_val += 10
-    elif project_count == 1:
-        project_score_val -= 5
-
-    projects_score = clamp(int(project_score_val))
-
-    # ── 4. EDUCATION SCORE ───────────────────────────────────────
-    edu_signals = [
-        bool(re.search(r"bachelor|b\.?tech|university|college", tl)),
-        bool(re.search(r"cgpa|gpa|percentage", tl)),
+    # Find the start of experience section
+    # Longer/more-specific patterns first to avoid false matches
+    # e.g. "experience" alone can appear in "Computer Science and Engineering"
+    exp_start_patterns = [
+        "work experience", "employment history", "employment",
+        "internship experience", "internship",
+        "professional experience", "experience"
+    ]
+    # Find the end of experience section (next section header)
+    next_section_patterns = [
+        "project", "education", "skill", "achievement",
+        "certification", "award", "publication", "volunteer",
+        "position", "extra", "activity", "language"
     ]
 
-    education_score = (sum(edu_signals) / len(edu_signals)) * 70
+    start_idx = -1
+    # Search for each pattern as a standalone section header (preceded by newline or start)
+    for pat in exp_start_patterns:
+        # Match pattern only when it appears at start of a line (section header context)
+        for m in re.finditer(r'(?:^|\n)\s*' + re.escape(pat) + r'\s*(?:\n|$)', text_lower):
+            candidate = m.start()
+            if start_idx == -1 or candidate < start_idx:
+                start_idx = candidate
+        if start_idx != -1:
+            break
 
-    # Top college boost
-    if any(x in tl for x in ["iit", "nit", "bits", "iiit"]):
-        education_score += 30
+    # Fallback: plain find if regex found nothing
+    if start_idx == -1:
+        for pat in exp_start_patterns:
+            idx = text_lower.find(pat)
+            if idx != -1:
+                start_idx = idx
+                break
 
-    education_score = clamp(int(education_score))
+    if start_idx != -1:
+        # Find earliest next-section boundary after experience starts
+        end_idx = len(text_lower)
+        for pat in next_section_patterns:
+            # Also match next-section headers as line-start patterns
+            for m in re.finditer(r'(?:^|\n)\s*' + re.escape(pat) + r'\s*(?:\n|$|s\b)', text_lower):
+                idx = m.start()
+                if idx > start_idx + 20 and idx < end_idx:
+                    end_idx = idx
+        # Fallback plain find
+        if end_idx == len(text_lower):
+            for pat in next_section_patterns:
+                idx = text_lower.find(pat, start_idx + 20)
+                if idx != -1 and idx < end_idx:
+                    end_idx = idx
+        exp_section = text_lower[start_idx:end_idx]
 
-    return {
-        "skills":     skills_score,
-        "projects":   projects_score,
-        "experience": experience_score,
-        "education":  education_score,
+    # ── Now scan only exp_section for company names ───────────────
+    tier_priority = ["S", "1A", "1B", "2", "3"]
+    tier_map = {
+        "S":  TIERS_BRANDS,
+        "1A": TIER1A_BRANDS,
+        "1B": TIER1B_BRANDS,
+        "2":  TIER2_BRANDS,
+        "3":  TIER3_BRANDS,
     }
 
+    best_tier   = "unknown"
+    all_matched = []
 
-def weighted_readiness_score(bd: dict) -> int:
-    # Extra bonus for truly exceptional experience (Tier 1 company)
-    exp_bonus = 0
-    if bd["experience"] >= 85:
-        exp_bonus = 6
-    elif bd["experience"] >= 60:
-        exp_bonus = 2
+    for tier in tier_priority:
+        matched = [b for b in tier_map[tier] if b in exp_section]
+        if matched:
+            all_matched.extend(matched)
+            if best_tier == "unknown":
+                best_tier = tier
 
-    return clamp(int(
-        0.30 * bd["skills"] +
-        0.25 * bd["projects"] +
-        0.35 * bd["experience"] +
-        0.10 * bd["education"] +
-        exp_bonus
-    ))
+    return best_tier, list(set(all_matched))
 
+def normalise_skill(s: str) -> str:
+    s = s.lower().strip()
+    return SKILL_SYNONYMS.get(s, s)
 
-def generate_explanations(bd, extracted, missing, ats, semantic_score):
-    out = []
-    if bd["skills"] < 60:
-        out.append({"area": "Skills Gap", "severity": "high",
-                    "issue": f"Only {len(extracted)} of {len(extracted)+len(missing)} required skills detected in your resume",
-                    "suggestion": f"Add these key missing skills: {', '.join(missing[:4])}"})
-    if bd["projects"] < 50:
-        out.append({"area": "Projects", "severity": "high",
-                    "issue": "No deployed projects or GitHub links detected in resume",
-                    "suggestion": "Add 2-3 projects with live demo links, GitHub URLs, and quantified impact"})
-    if bd["experience"] < 40:
-        out.append({"area": "Experience", "severity": "medium",
-                    "issue": "Limited work or internship experience found",
-                    "suggestion": "Contribute to open source projects or take freelance work to build real experience"})
-    if ats < 65:
-        out.append({"area": "ATS Compatibility", "severity": "medium",
-                    "issue": "Resume structure may not pass Applicant Tracking Systems",
-                    "suggestion": "Use standard section headings and include role-specific keywords naturally"})
-    if semantic_score < 40:
-        out.append({"area": "Role Alignment", "severity": "medium",
-                    "issue": "Resume content does not strongly align with the target role semantically",
-                    "suggestion": "Tailor your resume language to match the role — use role-specific terminology"})
-    if not out:
-        out.append({"area": "Overall Quality", "severity": "low",
-                    "issue": "Resume is strong but lacks quantified impact metrics",
-                    "suggestion": "Add numbers to your achievements: '40% faster load time', 'served 1000+ users', etc."})
-    return out[:4]
+def extract_skills_from_text(text: str) -> list[str]:
+    """
+    Extract all skills / tech terms from free-form resume text.
+    Returns a deduplicated, normalised list.
+    """
+    text_lower = text.lower()
 
+    # Master skill vocabulary (union of all role skills + common ones)
+    all_known_skills = set()
+    for rd in ROLE_DB.values():
+        all_known_skills.update(rd["required"])
+        all_known_skills.update(rd.get("bonus", []))
 
-def clamp(n): return max(0, min(100, n))
+    extra_skills = [
+        "git", "github", "jira", "postman", "vs code", "intellij", "linux",
+        "bash", "figma", "vercel", "render", "heroku", "firebase",
+        "java", "c++", "c", "python", "ruby", "go", "rust", "kotlin", "swift",
+        "jwt", "oauth", "graphql", "rest api", "websockets", "socket.io",
+        "bootstrap", "material ui", "shadcn", "framer motion",
+        "jest", "vitest", "playwright", "cypress", "mocha",
+        "redux toolkit", "zustand", "react query", "swr",
+        "prisma", "mongoose", "sequelize", "typeorm",
+        "stripe", "razorpay", "cloudinary", "bcrypt",
+        "data structures", "algorithms", "system design",
+        "oops", "dbms", "os", "computer networks",
+    ]
+    all_known_skills.update(extra_skills)
+
+    # Multi-word skills first, then single-word
+    found = set()
+    sorted_skills = sorted(all_known_skills, key=len, reverse=True)
+    for skill in sorted_skills:
+        pattern = r'\b' + re.escape(skill) + r'\b'
+        if re.search(pattern, text_lower):
+            found.add(normalise_skill(skill))
+
+    # Also check synonym map
+    for alias, canonical in SKILL_SYNONYMS.items():
+        pattern = r'\b' + re.escape(alias) + r'\b'
+        if re.search(pattern, text_lower):
+            found.add(canonical)
+
+    return sorted(found)
+
 
 def detect_role_key(role: str) -> str:
     r = role.lower()
-    if any(k in r for k in ["frontend", "react", "ui", "angular", "vue"]): return "frontend"
-    if any(k in r for k in ["backend", "node", "api", "server", "django"]): return "backend"
-    if any(k in r for k in ["fullstack", "full stack", "mern", "mean", "full-stack"]): return "fullstack"
-    if any(k in r for k in ["ml", "machine", "data", "ai", "deep", "nlp"]): return "ml"
-    if any(k in r for k in ["devops", "cloud", "sre", "infrastructure"]): return "devops"
-    return "frontend"
+    if any(k in r for k in ["data", "ml", "machine learning", "analyst", "science"]):
+        return "data"
+    if any(k in r for k in ["devops", "cloud", "infra", "sre", "platform"]):
+        return "devops"
+    if any(k in r for k in ["fullstack", "full stack", "mern", "full-stack"]):
+        return "fullstack"
+    if any(k in r for k in ["backend", "node", "api", "server", "django", "fastapi"]):
+        return "backend"
+    if any(k in r for k in ["frontend", "react", "ui", "angular", "vue"]):
+        return "frontend"
+    return "fullstack"
 
 
-def extract_text_from_pdf(path: str) -> str:
-    text = ""
-    with pdfplumber.open(path) as pdf:
-        for page in pdf.pages:
-            t = page.extract_text()
-            if t: text += t + "\n"
-    return text.strip()
+def compute_skill_scores(text: str, rd: dict) -> dict:
+    """
+    Returns:
+      skill_match   – 0-100, how many required skills are present
+      bonus_score   – 0-20, extra credit for advanced/bonus skills
+      extracted     – list of found skills
+      missing       – list of required skills NOT found
+    """
+    extracted = extract_skills_from_text(text)
+    text_lower = text.lower()
 
-def extract_text_from_docx(path: str) -> str:
-    doc = Document(path)
-    return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    required   = rd["required"]
+    bonus_list = rd.get("bonus", [])
 
+    found_required = [s for s in required if normalise_skill(s) in extracted or s in text_lower]
+    found_bonus    = [s for s in bonus_list if s in text_lower]
+    missing        = [s for s in required if s not in found_required]
 
-# ══════════════════════════════════════════════════════════════════
-# MAIN ANALYSIS PIPELINE
-# ══════════════════════════════════════════════════════════════════
-def analyze_pipeline(resume_text: str, role: str) -> dict:
-    rk = detect_role_key(role)
-    rd = ROLE_DB[rk]
-    print(f"[ML] Analyzing for role: {role} (key: {rk})")
-    tokens, lemmas, doc = nlp_preprocess_spacy(resume_text)
-    print(f"[ML] Preprocessed — {len(tokens)} tokens, {len(lemmas)} lemmas")
-    ats = calculate_ats_score(resume_text, rd)
-    print(f"[ML] ATS Score: {ats}")
-    extracted, missing = extract_skills_spacy(resume_text, rd["required"])
-    print(f"[ML] Extracted: {extracted} | Missing: {missing[:4]}")
-    semantic_score = calculate_semantic_skill_match(resume_text, rd)
-    print(f"[ML] Semantic Score: {semantic_score}")
-    tfidf_score = calculate_tfidf_match(resume_text, rd)
-    print(f"[ML] TF-IDF Score: {tfidf_score}")
-    skill_match = clamp(int(0.6 * semantic_score + 0.4 * tfidf_score))
-    bd      = calculate_section_scores(resume_text, rd, extracted)
-    overall = weighted_readiness_score(bd)
-    print(f"[ML] Breakdown: {bd} | Overall: {overall}")
-    explanations = generate_explanations(bd, extracted, missing, ats, semantic_score)
-    # confidence = clamp(70 + min(20, len(resume_text.split()) // 50))
-    confidence = clamp(
-        60 +
-        min(20, len(resume_text.split()) // 40) +
-        (5 if overall > 75 else 0) +
-        (5 if ats > 70 else 0)
-    )
+    req_ratio    = len(found_required) / max(len(required), 1)
+    skill_match  = clamp(req_ratio * 85 + (len(found_bonus) / max(len(bonus_list), 1)) * 15)
+    bonus_score  = clamp((len(found_bonus) / max(len(bonus_list), 1)) * 20, 0, 20)
+
     return {
-        "overall_score":      overall,
-        "ats_score":          ats,
-        "skill_match":        skill_match,
-        "breakdown":          bd,
-        "extracted_skills":   extracted or ["No matching skills found"],
-        "missing_skills":     missing,
-        "recommendations":    rd["suggestions"],
-        "suggested_projects": rd["projects"],
-        "courses":            rd["courses"],
-        "jobs":               rd["jobs"],
-        "explanations":       explanations,
-        "confidence_level":   confidence,
+        "skill_match":  skill_match,
+        "bonus_score":  bonus_score,
+        "extracted":    extracted,
+        "missing":      missing[:6],        # top 6 most important missing skills
+        "found_required": found_required,
     }
 
 
-# ══════════════════════════════════════════════════════════════════
-# CHATBOT
-# ══════════════════════════════════════════════════════════════════
-def detect_intent(msg: str, doc) -> str:
-    msg_l = msg.lower()
-    if any(w in msg_l for w in ["hello", "hi", "hey", "help", "start", "what can you"]):     return "greet"
-    if any(w in msg_l for w in ["interview", "prepare", "question", "dsa", "leetcode"]):      return "interview"
-    if any(w in msg_l for w in ["salary", "package", "ctc", "pay", "stipend"]):               return "salary"
-    if any(w in msg_l for w in ["skill", "learn", "missing", "technology", "tech stack"]):    return "skills"
-    if any(w in msg_l for w in ["project", "build", "portfolio", "idea", "what to build"]):   return "projects"
-    if any(w in msg_l for w in ["course", "resource", "tutorial", "study", "where to learn"]): return "courses"
-    if any(w in msg_l for w in ["job", "apply", "company", "intern", "hiring", "career"]):    return "jobs"
-    if any(w in msg_l for w in ["ats", "resume", "format", "keyword", "cv", "template"]):     return "ats"
-    if any(w in msg_l for w in ["score", "readiness", "rating", "algorithm", "how does"]):    return "score"
-    if any(w in msg_l for w in ["github", "open source", "contribution", "repository"]):      return "github"
-    return "general"
+def compute_experience_score(text: str) -> dict:
+    """
+    Scores experience 0-100 using:
+      1. Presence of experience section
+      2. Company tier (S / 1A / 1B / 2 / 3 / unknown) — main driver
+         Scanned ONLY from the experience section, NOT projects.
+      3. Seniority (intern vs full-time)
+      4. Quantified impact metrics
 
+    Duration is intentionally excluded — quality of company matters, not time spent.
+    Returns best_tier for dynamic overall weight calculation.
+    """
+    text_lower = text.lower()
+    score      = 0
+    signals    = []
 
-def get_chat_reply(message: str, role: str) -> str:
-    try:
-        rk = detect_role_key(role)
-        rd = ROLE_DB.get(rk, ROLE_DB["frontend"])
+    # ── 1. Has an Experience section at all? ─────────────────────
+    has_exp_section = any(kw in text_lower for kw in
+                          ["experience", "work experience", "employment", "internship"])
+    if not has_exp_section:
+        return {"score": 5, "msg": "No work experience section found.",
+                "level": "fresher", "best_tier": "unknown", "matched_companies": []}
 
-        system_prompt = f"""
-You are an expert AI Career Counselor for {role} roles.
+    score += 10   # base for having experience
 
-Give:
-- Practical advice
-- Real-world roadmap
-- Skills + tools
-- Project ideas
-- Resume improvement suggestions
+    # ── 2. Company Tier — graduated scoring ──────────────────────
+    best_tier, matched_companies = detect_company_tier(text_lower)
+    tier_score = TIER_SCORE_MAP[best_tier]
+    score += tier_score
 
-Be helpful and slightly conversational.
-Avoid generic answers.
-"""
-
-        response = groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message},
-            ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.7,
+    if matched_companies:
+        tier_label = {
+            "S":  "FAANG / Global top-tier",
+            "1A": "Indian unicorn / top product company",
+            "1B": "Reputed startup / EdTech product company",
+            "2":  "IT services / consulting company",
+            "3":  "Bootcamp / low-signal internship provider",
+        }.get(best_tier, "Unknown")
+        signals.append(
+            f"{tier_label} experience: {', '.join(matched_companies)} "
+            f"(Tier {best_tier}, +{tier_score} pts)"
         )
+    else:
+        signals.append("No well-known company found; startup/self experience assumed. (+5 pts)")
 
-        return response.choices[0].message.content
+    # ── 3. Seniority signals ─────────────────────────────────────
+    is_fulltime = any(kw in text_lower for kw in
+                      ["software engineer", "swe", "developer", "engineer at",
+                       "full time", "full-time", "present"])
+    is_intern   = any(kw in text_lower for kw in
+                      ["intern", "internship", "trainee"])
 
-    except Exception as e:
-        print(f"[CHAT ERROR]: {e}")
+    if is_fulltime and not is_intern:
+        score += 20
+        signals.append("Full-time employment detected.")
+    elif is_fulltime and is_intern:
+        score += 12
+        signals.append("Mix of internship and full-time roles detected.")
+    elif is_intern:
+        score += 6
+        signals.append("Internship experience detected.")
 
-        # fallback (old logic)
-        return "I'm here to help! Ask me about skills, projects, or career guidance."
+    # ── 4. Quantified achievements ───────────────────────────────
+    impact_hits = len(re.findall(r'\d+\s*%|\d+x|\d+\s*ms|\d+\s*times', text_lower))
+    if impact_hits >= 4:
+        score += 10
+        signals.append("Strong quantified impact metrics found.")
+    elif impact_hits >= 1:
+        score += 4
+        signals.append("Some quantified impact found.")
 
-# ══════════════════════════════════════════════════════════════════
-# API ROUTES
-# ══════════════════════════════════════════════════════════════════
+    score = clamp(score)
 
-@app.get("/health")
-def health():
+    if score >= 80:
+        level = "senior"
+    elif score >= 55:
+        level = "mid"
+    elif score >= 30:
+        level = "junior"
+    else:
+        level = "fresher"
+
+    summary = " | ".join(signals) if signals else "Basic experience detected."
     return {
-        "status": "ok",
-        "service": "ml-service — Intelligent Edition",
-        "models": ["spaCy en_core_web_md", "all-MiniLM-L6-v2 (Sentence Transformers)"],
+        "score":             score,
+        "msg":               summary,
+        "level":             level,
+        "best_tier":         best_tier,
+        "matched_companies": matched_companies,
     }
 
-@app.get("/")
-def root():
-    return {
-        "status": "ok",
-        "service": "Career Readiness ML Service",
-        "routes": ["/health", "/analyze", "/chat"]
-    }
 
+def compute_education_score(text: str) -> dict:
+    """Score 0-100 based on degree, CGPA, and institution prestige."""
+    text_lower = text.lower()
+    score      = 0
+    msg        = []
+
+    # Degree type
+    if any(d in text_lower for d in ["b.tech", "btech", "b.e.", "be ", "bachelor of technology",
+                                      "bachelor of engineering"]):
+        score += 40
+        msg.append("B.Tech / B.E. degree detected.")
+    elif any(d in text_lower for d in ["m.tech", "mtech", "m.e.", "msc", "m.sc", "master"]):
+        score += 55
+        msg.append("Master's degree detected.")
+    elif any(d in text_lower for d in ["phd", "ph.d", "doctorate"]):
+        score += 70
+        msg.append("PhD detected.")
+    elif any(d in text_lower for d in ["bca", "mca", "bsc", "b.sc"]):
+        score += 30
+        msg.append("BSc / BCA / MCA degree detected.")
+    else:
+        score += 15
+        msg.append("No standard CS degree found.")
+
+    # CGPA / Percentage
+    cgpa_hits = re.findall(r'(\d+(?:\.\d+)?)\s*/\s*10', text_lower)
+    if cgpa_hits:
+        cgpa = float(cgpa_hits[0])
+        if cgpa >= 9.0:
+            score += 30
+            msg.append(f"Excellent CGPA {cgpa}/10.")
+        elif cgpa >= 8.0:
+            score += 22
+            msg.append(f"Good CGPA {cgpa}/10.")
+        elif cgpa >= 7.0:
+            score += 12
+            msg.append(f"Average CGPA {cgpa}/10.")
+        else:
+            score += 4
+
+    # Percentage
+    pct_hits = re.findall(r'(\d+(?:\.\d+)?)\s*%', text)
+    high_pcts = [float(p) for p in pct_hits if float(p) >= 85]
+    if high_pcts:
+        score += 10
+        msg.append(f"High academic percentage: {max(high_pcts):.0f}%.")
+
+    # Prestigious institutions (IIT, NIT, BITS, IIIT)
+    if any(inst in text_lower for inst in ["iit", "nit ", "bits pilani", "iiit", "iim"]):
+        score += 20
+        msg.append("Prestigious institution detected.")
+    elif "mmmut" in text_lower or "madan mohan" in text_lower:
+        score += 8
+        msg.append("MMMUT detected (state university).")
+
+    return {"score": clamp(score), "msg": " | ".join(msg)}
+
+
+def compute_project_score(text: str, rd: dict) -> dict:
+    """Score 0-100 based on number, complexity, and deployment of projects."""
+    text_lower = text.lower()
+    score      = 0
+    msg        = []
+
+    # Count distinct project entries (rough heuristic)
+    project_count = len(re.findall(
+        r'\b(project|built|developed|created|designed|implemented)\b',
+        text_lower))
+
+    if project_count >= 8:
+        score += 35
+        msg.append(f"High number of project signals ({project_count}).")
+    elif project_count >= 4:
+        score += 25
+        msg.append(f"Good project count ({project_count}).")
+    elif project_count >= 2:
+        score += 15
+        msg.append(f"Some projects detected ({project_count}).")
+    else:
+        score += 5
+        msg.append("Very few project signals found.")
+
+    # Deployment signals
+    deploy_hits = sum(1 for kw in ["vercel", "render", "heroku", "netlify",
+                                    "aws", "firebase hosting", "live", "deployed",
+                                    "production", "github pages"]
+                      if kw in text_lower)
+    if deploy_hits >= 3:
+        score += 25
+        msg.append("Multiple deployed / live projects.")
+    elif deploy_hits >= 1:
+        score += 12
+        msg.append("At least one deployed project.")
+    else:
+        score += 0
+        msg.append("No deployment signals found.")
+
+    # Full-stack project signals
+    if all(kw in text_lower for kw in ["react", "node", "mongodb"]):
+        score += 10
+        msg.append("Full-stack MERN projects detected.")
+    elif any(kw in text_lower for kw in ["rest api", "backend", "express"]):
+        score += 6
+
+    # GitHub links
+    if "github.com" in text_lower or "git_repo" in text_lower:
+        score += 10
+        msg.append("GitHub links present.")
+
+    # Complexity signals (auth, payment, real-time, map, etc.)
+    complexity_keywords = ["jwt", "oauth", "stripe", "razorpay", "websocket",
+                           "socket.io", "google map", "cloudinary", "redis",
+                           "microservice", "lld", "system design", "kafka"]
+    complex_hits = sum(1 for kw in complexity_keywords if kw in text_lower)
+    if complex_hits >= 3:
+        score += 15
+        msg.append("High project complexity (auth, payments, real-time, etc.).")
+    elif complex_hits >= 1:
+        score += 7
+        msg.append("Some technical depth in projects.")
+
+    return {"score": clamp(score), "msg": " | ".join(msg)}
+
+
+def compute_ats_score(text: str) -> dict:
+    """
+    ATS (Applicant Tracking System) readability score.
+    Checks for: action verbs, quantified bullets, section headers,
+    appropriate length, keywords density.
+    """
+    text_lower = text.lower()
+    score      = 0
+    msg        = []
+
+    # Action verbs
+    action_verbs = ["developed", "built", "designed", "implemented", "improved",
+                    "created", "managed", "led", "delivered", "optimised",
+                    "reduced", "increased", "deployed", "migrated", "integrated",
+                    "revamped", "owned", "architected", "launched"]
+    verb_hits = sum(1 for v in action_verbs if v in text_lower)
+    if verb_hits >= 8:
+        score += 25
+        msg.append("Strong use of action verbs.")
+    elif verb_hits >= 4:
+        score += 15
+        msg.append("Moderate use of action verbs.")
+    else:
+        score += 5
+        msg.append("Weak action verb usage.")
+
+    # Quantified achievements
+    quant_hits = len(re.findall(r'\d+\s*%|\d+x|\$\d+|\d+\s*ms|\d+\+?\s*(users|requests|queries)',
+                                 text_lower))
+    if quant_hits >= 5:
+        score += 25
+        msg.append("Excellent quantified achievements.")
+    elif quant_hits >= 2:
+        score += 15
+        msg.append("Some quantified achievements.")
+    else:
+        score += 3
+        msg.append("Very few numbers / metrics in bullets.")
+
+    # Section headers present
+    sections = ["education", "experience", "project", "skill", "achievement", "certification"]
+    found_sections = sum(1 for s in sections if s in text_lower)
+    score += min(found_sections * 4, 20)
+
+    # Resume length (words)
+    word_count = len(text.split())
+    if 300 <= word_count <= 700:
+        score += 15
+        msg.append("Good resume length.")
+    elif word_count > 700:
+        score += 8
+        msg.append("Resume slightly long.")
+    else:
+        score += 3
+        msg.append("Resume too short.")
+
+    # Contact info
+    has_email   = bool(re.search(r'[\w.\-]+@[\w.\-]+\.\w+', text))
+    has_github  = "github" in text_lower
+    has_linkedin = "linkedin" in text_lower
+    if has_email:
+        score += 5
+    if has_github:
+        score += 3
+    if has_linkedin:
+        score += 3
+
+    return {"score": clamp(score), "msg": " | ".join(msg)}
+
+
+def compute_competitive_programming_bonus(text: str) -> int:
+    """Extra bonus (0-10) for competitive programmers."""
+    text_lower = text.lower()
+    bonus = 0
+    cp_platforms = ["codeforces", "codechef", "leetcode", "hackerrank",
+                    "atcoder", "kickstart", "icpc", "stopstalk"]
+    cp_hits = sum(1 for p in cp_platforms if p in text_lower)
+    if cp_hits >= 2:
+        bonus += 5
+    rating_hits = re.findall(r'rating\s*:\s*(\d+)', text_lower)
+    if rating_hits and int(rating_hits[0]) >= 1600:
+        bonus += 3
+    if "global rank" in text_lower:
+        bonus += 2
+    return min(bonus, 10)
+
+
+def generate_recommendations(text: str, rd: dict, skill_data: dict,
+                               exp_data: dict, proj_data: dict) -> list[str]:
+    """Generate personalised, ranked recommendations."""
+    recs  = []
+    t     = text.lower()
+    level = exp_data["level"]
+
+    # Skill gap recommendations
+    for skill in skill_data["missing"][:3]:
+        recs.append(f"Learn {skill.title()} — it is a core requirement for this role.")
+
+    # Level-specific
+    if level == "fresher":
+        recs.append("Complete at least one internship or open-source contribution before applying.")
+        recs.append("Build 2-3 full-stack projects with live deployments to strengthen your portfolio.")
+    elif level == "junior":
+        recs.append("Focus on project depth: add auth, payments, and real-time features to existing projects.")
+        recs.append("Contribute to open source to demonstrate collaboration and code quality.")
+    elif level in ("mid", "senior"):
+        recs.append("Highlight system design decisions and architectural choices in your resume bullets.")
+        recs.append("Quantify the business/performance impact of every feature you built.")
+
+    # General quality tips
+    if "github" not in t:
+        recs.append("Add your GitHub profile link — recruiters always check it.")
+    if "deployed" not in t and "live" not in t and "vercel" not in t:
+        recs.append("Deploy your projects and add live links; it signals real-world readiness.")
+    if not re.search(r'\d+\s*%|\d+x', t):
+        recs.append("Add measurable impact numbers (e.g., 'Reduced load time by 40%') to your bullets.")
+
+    # Add role-specific suggestions
+    recs.extend(rd["suggestions"])
+
+    # Deduplicate and limit
+    seen = set()
+    unique_recs = []
+    for r in recs:
+        key = r[:40].lower()
+        if key not in seen:
+            seen.add(key)
+            unique_recs.append(r)
+
+    return unique_recs[:7]
+
+
+def generate_explanations(skill_data: dict, exp_data: dict,
+                           proj_data: dict, edu_data: dict,
+                           ats_data: dict) -> list[dict]:
+    """Generate itemised explanations for each scored area."""
+    explanations = []
+
+    def severity(score):
+        if score < 40: return "high"
+        if score < 65: return "medium"
+        return "low"
+
+    explanations.append({
+        "area":       "Skills",
+        "issue":      f"Matched {skill_data['skill_match']}% of required skills.",
+        "suggestion": f"Missing: {', '.join(skill_data['missing'][:4]) or 'None'}.",
+        "severity":   severity(skill_data["skill_match"]),
+    })
+    explanations.append({
+        "area":       "Experience",
+        "issue":      exp_data["msg"],
+        "suggestion": ("Pursue longer internships or full-time roles at product companies."
+                       if exp_data["level"] in ("fresher", "junior")
+                       else "Highlight ownership and cross-functional impact."),
+        "severity":   severity(exp_data["score"]),
+    })
+    explanations.append({
+        "area":       "Projects",
+        "issue":      proj_data["msg"],
+        "suggestion": ("Deploy projects and add live links and GitHub repos."
+                       if proj_data["score"] < 60
+                       else "Add more technical depth and complexity to existing projects."),
+        "severity":   severity(proj_data["score"]),
+    })
+    explanations.append({
+        "area":       "Education",
+        "issue":      edu_data["msg"],
+        "suggestion": ("Maintain CGPA > 8 and highlight relevant coursework."
+                       if edu_data["score"] < 60
+                       else "Your educational background is competitive."),
+        "severity":   severity(edu_data["score"]),
+    })
+    explanations.append({
+        "area":       "ATS / Resume Quality",
+        "issue":      ats_data["msg"],
+        "suggestion": ("Use more action verbs and add measurable metrics to every bullet point."
+                       if ats_data["score"] < 60
+                       else "Resume quality is good; ensure it is in clean single-column format."),
+        "severity":   severity(ats_data["score"]),
+    })
+
+    return explanations
+
+
+# ══════════════════════════════════════════════════════════════════
+# MAIN ANALYSIS ENDPOINT
+# ══════════════════════════════════════════════════════════════════
 
 @app.post("/analyze")
 async def analyze(
     role: str = Form(...),
-    file: UploadFile = File(None),
-    resume_text: str = Form(None),
+    file: Optional[UploadFile] = File(None),
+    resume_text: Optional[str] = Form(None),
 ):
+    # ── 1. Extract text ──────────────────────────────────────────
     text = ""
-
-    if file and file.filename:
-        filename = file.filename.lower()
-        suffix = ".pdf" if filename.endswith(".pdf") else ".docx"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+    if file:
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
         try:
-            text = extract_text_from_pdf(tmp_path) if suffix == ".pdf" else extract_text_from_docx(tmp_path)
+            if file.filename.lower().endswith(".pdf"):
+                with pdfplumber.open(tmp_path) as pdf:
+                    text = "\n".join(
+                        [p.extract_text() for p in pdf.pages if p.extract_text()]
+                    )
+            else:
+                doc = Document(tmp_path)
+                text = "\n".join([p.text for p in doc.paragraphs])
         finally:
             os.unlink(tmp_path)
+    else:
+        text = resume_text or ""
 
-    elif resume_text:
-        text = resume_text
+    if len(text.strip()) < 50:
+        raise HTTPException(status_code=400, detail="Resume text too short or unreadable.")
 
-    if not text or len(text.strip()) < 50:
-        raise HTTPException(
-            status_code=422,
-            detail="Resume text too short or unreadable. Send a valid PDF/DOCX or resume_text with 50+ characters."
-        )
+    # ── 2. Detect role & load role data ─────────────────────────
+    rk = detect_role_key(role)
+    rd = ROLE_DB.get(rk, ROLE_DB["fullstack"])
 
-    try:
-        return analyze_pipeline(text, role)
-    except Exception as e:
-        print(f"ANALYSIS ERROR: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+    # ── 3. Run all sub-scorers ───────────────────────────────────
+    skill_data = compute_skill_scores(text, rd)
+    exp_data   = compute_experience_score(text)
+    proj_data  = compute_project_score(text, rd)
+    edu_data   = compute_education_score(text)
+    ats_data   = compute_ats_score(text)
+    cp_bonus   = compute_competitive_programming_bonus(text)
+
+    # ── 4. Breakdown scores (each 0-100) ─────────────────────────
+    breakdown = {
+        "skills":     skill_data["skill_match"],
+        "projects":   proj_data["score"],
+        "experience": exp_data["score"],
+        "education":  edu_data["score"],
+    }
+
+    # ── 5. Overall & ATS scores ──────────────────────────────────
+    # Base weights: skills 30%, experience 25%, projects 25%, education 15%, cp 5%
+    # Experience weight gets a BOOST based on company tier — the better the company,
+    # the more experience matters relative to other signals.
+    base_exp_weight  = 0.25
+    tier_boost       = TIER_EXP_WEIGHT_BOOST.get(exp_data.get("best_tier", "unknown"), 0.0)
+    exp_weight       = base_exp_weight + tier_boost          # e.g. FAANG → 0.35
+
+    # Redistribute the extra weight from skills and projects equally
+    redistribute     = tier_boost / 2
+    skills_weight    = max(0.20, 0.30 - redistribute)
+    projects_weight  = max(0.15, 0.25 - redistribute)
+    edu_weight       = 0.15
+
+    raw_overall = (
+        breakdown["skills"]     * skills_weight  +
+        breakdown["experience"] * exp_weight     +
+        breakdown["projects"]   * projects_weight +
+        breakdown["education"]  * edu_weight
+    )
+    # Apply CP bonus (max +5 to overall)
+    overall_score = clamp(raw_overall + cp_bonus * 0.5)
+
+    # ATS score weighted with skill match
+    ats_score = clamp(ats_data["score"] * 0.65 + skill_data["skill_match"] * 0.35)
+
+    # Skill match displayed value
+    skill_match = skill_data["skill_match"]
+
+    # ── 6. Confidence level: how much data did we find? ──────────
+    word_count       = len(text.split())
+    confidence_level = clamp(
+        50
+        + (20 if word_count > 200 else 0)
+        + (15 if exp_data["score"] > 20 else 0)
+        + (10 if proj_data["score"] > 20 else 0)
+        + (5  if edu_data["score"] > 20 else 0)
+    )
+
+    # ── 7. Personalised recommendations & explanations ───────────
+    recommendations = generate_recommendations(text, rd, skill_data, exp_data, proj_data)
+    explanations    = generate_explanations(skill_data, exp_data, proj_data, edu_data, ats_data)
+
+    # ── 8. Return final payload ──────────────────────────────────
+    return {
+        "overall_score":    overall_score,
+        "ats_score":        ats_score,
+        "skill_match":      skill_match,
+        "breakdown":        breakdown,
+        "extracted_skills": skill_data["extracted"],
+        "missing_skills":   skill_data["missing"],
+        "recommendations":  recommendations,
+        "suggested_projects": rd["projects"],
+        "courses":          rd["courses"],
+        "jobs":             rd["jobs"],
+        "explanations":     explanations,
+        "confidence_level": confidence_level,
+
+        # Extra metadata (optional, useful for debugging / UI details)
+        "_meta": {
+            "role_key":            rk,
+            "experience_level":    exp_data["level"],
+            "company_tier":        exp_data.get("best_tier", "unknown"),
+            "matched_companies":   exp_data.get("matched_companies", []),
+            "exp_weight_used":     round(base_exp_weight + tier_boost, 2),
+            "tier_boost_applied":  round(tier_boost, 2),
+            "cp_bonus":            cp_bonus,
+            "word_count":          word_count,
+        },
+    }
 
 
-@app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
-    try:
-        reply = get_chat_reply(req.message, req.role)
-        return ChatResponse(reply=reply)
-    except Exception as e:
-        print(f"CHAT ERROR: {e}")
-        return ChatResponse(reply="I am here to help with your career! Ask me about skills, projects, courses, or interview tips.")
+# ══════════════════════════════════════════════════════════════════
+# HEALTH CHECK
+# ══════════════════════════════════════════════════════════════════
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "Career Readiness ML Service"}
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
