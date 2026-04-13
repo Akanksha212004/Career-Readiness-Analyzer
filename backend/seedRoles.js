@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const Role = require('./models/Role');
+const fs = require('fs');
 require('dotenv').config();
+
 
 const rolesData = [
   { title: "Full Stack Web Developer Intern", category: "internship" },
@@ -16,20 +18,20 @@ const rolesData = [
 
 const runSeed = async () => {
   try {
-    const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/career_readiness';
-    await mongoose.connect(uri);
-    console.log("Database connected...");
-
-    // Purana data saaf karein taaki fresh start ho
-    await Role.deleteMany({}); 
+    await mongoose.connect(process.env.MONGO_URI);
     
-    // Naya data insert karein
-    await Role.insertMany(rolesData);
+    await Role.deleteMany({}); 
+    console.log("Old roles cleared...");
 
-    console.log("Database Seeded Successfully! ");
+    const rawData = fs.readFileSync('./roles_dataset.json');
+    const rolesData = JSON.parse(rawData);
+
+    await Role.insertMany(rolesData);
+    console.log(`${rolesData.length} unique roles seeded successfully! `);
+    
     process.exit();
   } catch (err) {
-    console.error("Seeding failed:", err.message);
+    console.error(err);
     process.exit(1);
   }
 };
