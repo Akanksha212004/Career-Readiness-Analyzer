@@ -207,8 +207,8 @@ python app.py
 
 ## 👩‍💻 Authors
 **Akanksha Yadav**
-**Anjali Jaiswal**
 
+**Anjali Jaiswal**
 ---
 
 ## ⭐ Support
