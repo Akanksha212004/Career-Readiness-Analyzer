@@ -110,7 +110,7 @@ Career-Readiness-Analyzer
 ### Clone Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/Career-Readiness-Analyzer.git
+git clone https://github.com/Akanksha212004/Career-Readiness-Analyzer.git
 ```
 
 ### Install Backend
