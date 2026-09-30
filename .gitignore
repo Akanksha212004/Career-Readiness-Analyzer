@@ -1,0 +1,43 @@
+# --- Node (frontend, backend) ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# --- Next.js (frontend) ---
+frontend/.next/
+frontend/out/
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+
+# --- Python (ai-service) ---
+ai-service/__pycache__/
+ai-service/**/__pycache__/
+ai-service/*.pyc
+ai-service/.venv/
+ai-service/venv/
+ai-service/*.egg-info/
+
+# --- Env files (never commit real secrets) ---
+.env
+.env.local
+**/.env
+**/.env.local
+!.env.example
+!**/.env.example
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- Backend uploads (temp, not persisted) ---
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# --- Build output ---
+build/
+dist/
+coverage/

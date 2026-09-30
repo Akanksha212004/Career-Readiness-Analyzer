@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #ffffff;
+  --surface: #f8fafc;
+  --foreground: #1e293b;
+  --border: #e2e8f0;
+
+  --primary: #0d9488;
+  --primary-foreground: #ffffff;
+  --accent: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+
+  --font-heading: var(--font-lexend);
+  --font-body: var(--font-inter);
+}
+
+/* Deep green + mint dark theme - same brand family as the light teal/lime
+   theme, just inverted, so toggling feels like one brand's day/night mode
+   rather than two different products. */
+.dark {
+  --background: #0a0f0d;
+  --surface: #132018;
+  --foreground: #f0fdf4;
+  --border: #1f3b2c;
+
+  --primary: #4ade80;
+  --primary-foreground: #0a0f0d;
+  --accent: #34d399;
+  --warning: #fbbf24;
+  --error: #f87171;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --font-sans: var(--font-body);
+  --font-heading: var(--font-heading);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+h1, h2, h3, h4, .font-heading {
+  font-family: var(--font-heading), ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  border-color: var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+
